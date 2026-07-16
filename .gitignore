@@ -17,3 +17,18 @@ assets/payslips/
 # Data
 *.xls
 
+# Python environment
+myenv/
+
+# Temporary / personal files
+0 claude.zip
+0 claude/
+
+# Documents / images
+Sample_payslip.jpeg
+PCB.docx
+
+# Debug / helper files
+debug_login.py
+generate_hash.py
+CURRENT_SESSION.md
