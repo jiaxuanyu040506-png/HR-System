@@ -1,0 +1,19 @@
+# 个人备忘录，不上传
+NOTES.md
+
+# 密钥与本地配置，不上传
+.streamlit/secrets.toml
+credentials/
+*.json
+
+# Python 常规忽略
+venv/
+__pycache__/
+*.pyc
+
+# 生成的工资单文件（属于运行时数据，不进代码仓库）
+assets/payslips/
+
+# Data
+*.xls
+
