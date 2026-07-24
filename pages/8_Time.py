@@ -21,9 +21,9 @@ if balance is None:
     init_year_balance(employee_id, year)
     balance = get_leave_balance(employee_id, year)
 
-section = st.radio(
+section = st.segmented_control(
     "Section", ["Apply Leave", "Leave Calendar", "Leave History"],
-    horizontal=True, label_visibility="collapsed",
+    default = "Apply Leave",
 )
 st.divider()
 
@@ -36,8 +36,9 @@ if section == "Apply Leave":
     with col_balance:
         st.markdown("#### Leave Balance")
         remaining_annual = int(balance["annual_total"]) - float(balance["annual_used"])
+        medical_annual = int(balance["medical_total"]) - float(balance["medical_used"])
         balance_table = pd.DataFrame(
-            {"Days Remaining": [remaining_annual, balance["sick_balance"]]},
+            {"Days Remaining": [remaining_annual, medical_annual]},
             index=["Annual Leave", "Medical Leave"],
         )
         st.table(balance_table)

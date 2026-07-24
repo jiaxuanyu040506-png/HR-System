@@ -2,9 +2,10 @@ import streamlit as st
 from datetime import date
 from utils.ui import inject_css, render_nav_sidebar
 from utils.auth import require_role
-from utils.sheets_client import read_table
-from utils.payroll_calc import calculate_payslip
+from utils.sheets_client import read_table, delete_row
+from utils.payroll_calc import calculate_payslip, preview_payslip
 from utils.pdf_generator import generate_payslip_pdf_bytes
+from utils.ea_forms import upload_ea_form, get_all_ea_forms
 
 inject_css()
 require_role(["hr_admin"])
@@ -28,68 +29,182 @@ st.caption(
 )
 
 st.divider()
-st.subheader("Generate Payslip")
-st.caption(
-    "EPF / SOCSO / BBK / EIS are calculated automatically from the rate tables. "
-    "PCB is NOT auto-calculated — enter the figure from LHDN's e-PCB calculator."
+section = st.radio(
+    "Section", ["Generate Payslip", "Payroll History", "Upload EA Form"],
+    horizontal=True, label_visibility="collapsed",
 )
-
-if employees.empty:
-    st.caption("No employees found yet.")
-else:
-    name_to_id = dict(zip(employees["name"], employees["employee_id"]))
-
-    with st.form("payslip_form"):
-        selected_name = st.selectbox("Employee", list(name_to_id.keys()))
-        month = st.text_input("Month (YYYY-MM)", placeholder="2026-07")
-        basic_salary = st.number_input("Basic salary (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
-        allowance = st.number_input("Allowance (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
-        pcb = st.number_input("PCB (RM)", min_value=0.0, step=1.0, value=None, placeholder="0.00")
-        submitted = st.form_submit_button("Calculate & Save")
-
-    if submitted:
-        emp_id = name_to_id[selected_name]
-        employee = employees[employees["employee_id"] == emp_id].iloc[0].to_dict()
-        try:
-            payslip = calculate_payslip(
-                emp_id, employee["name"], month,
-                basic_salary or 0.0, allowance or 0.0,
-                employee["date_of_birth"], pcb or 0.0,
-            )
-            st.success(f"Payslip saved for {employee['name']} — Net pay: RM {payslip['net_pay']:.2f}")
-            pdf_bytes = generate_payslip_pdf_bytes(employee, payslip)
-            st.download_button("Download PDF", pdf_bytes,
-                                file_name=f"{employee['name']}_{month}.pdf", mime="application/pdf")
-        except ValueError as e:
-            st.error(str(e))
-
 st.divider()
-st.subheader("Payroll History")
-if payslips.empty:
-    st.caption("No payslips generated yet.")
-else:
-    summary = payslips.groupby("month").agg(
-        employees=("employee_id", "count"),
-        total_amount=("net_pay", lambda s: s.astype(float).sum()),
-    ).reset_index().sort_values("month", ascending=False)
-    st.dataframe(summary, use_container_width=True)
 
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-    with st.expander("🗑️ Delete a payslip record (testing / data-entry mistakes only)"):
-        st.warning("This permanently removes the row from the Payslips sheet.")
-        options = {}
-        for _, row in payslips.iterrows():
-            label_name = row.get("employee_name") or row.get("employee_id", "Unknown")
-            month_label = row.get("month", "-")
+# ---------- Generate Payslip ----------
+if section == "Generate Payslip":
+    st.caption(
+        "EPF / SOCSO / BBK / EIS are calculated automatically from the rate tables. "
+        "PCB is NOT auto-calculated — enter the figure from LHDN's e-PCB calculator."
+    )
+
+    if employees.empty:
+        st.caption("No employees found yet.")
+    else:
+        name_to_id = dict(zip(employees["name"], employees["employee_id"]))
+
+        with st.form("payslip_form"):
+            selected_name = st.selectbox("Employee", list(name_to_id.keys()))
+            month = st.text_input("Month (YYYY-MM)", placeholder="2026-07")
+            basic_salary = st.number_input("Basic salary (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
+            allowance = st.number_input("Allowance (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
+            skbbk_option = st.radio("SKBBK Contribution", ["Yes", "No"], horizontal=True)
+            pcb = st.number_input("PCB (RM)", min_value=0.0, step=1.0, value=None, placeholder="0.00")
+            preview_clicked = st.form_submit_button("Preview Payslip")
+            # submitted = st.form_submit_button("Generate Payslip")
+
+        # Preview
+        if preview_clicked:
+            emp_id = name_to_id[selected_name]
+            employee = employees[employees["employee_id"] == emp_id].iloc[0].to_dict()
+
             try:
-                net_pay_val = float(row.get("net_pay", 0) or 0)
-            except (ValueError, TypeError):
-                net_pay_val = 0.0
-            options[f"{label_name} — {month_label} (RM {net_pay_val:.2f})"] = row.get("payslip_id", "")
-        selected_label = st.selectbox("Select payslip", list(options.keys()), key="delete_payslip_select")
-        confirm = st.checkbox("Yes, permanently delete this payslip", key="confirm_delete_payslip")
-        if st.button("Delete Payslip", disabled=not confirm, key="delete_payslip_btn"):
-            from utils.sheets_client import delete_row
-            delete_row("Payslips", {"payslip_id": options[selected_label]})
-            st.success("Payslip deleted.")
-            st.rerun()
+                preview = preview_payslip(employee_id=emp_id,month=month,
+                basic_salary=basic_salary,allowance=allowance or 0.0,
+                date_of_birth=employee["date_of_birth"], pcb=pcb or 0.0,
+                include_skbbk=(skbbk_option=="Yes")
+                )
+
+                # store preview in session
+                st.session_state["payslip_preview"] = preview
+                st.session_state["payslip_employee"] = employee
+                st.session_state["payslip_emp_id"] = emp_id
+                st.session_state["payslip_month"] = month
+                st.session_state["payslip_basic"] = basic_salary or 0.0
+                st.session_state["payslip_allowance"] = allowance or 0.0
+                st.session_state["payslip_pcb"] = pcb or 0.0
+                st.session_state["payslip_skbbk"] = (
+                    skbbk_option == "Yes"
+                )
+
+            except ValueError as e:
+                st.error(str(e))
+        
+        # Display Preview
+        if "payslip_preview" in st.session_state:
+            preview = st.session_state["payslip_preview"]
+
+            st.divider()
+            st.subheader("Payroll Preview")
+
+            c1,c2,c3 = st.columns(3)
+            c1.metric("Gross Salary", f"RM {preview['gross_salary']:.2f}")
+            c2.metric("Unpaid Leave", f'{preview["unpaid_leave_days"]:.1f} Days')
+            c3.metric("UPL Deduction", f'-RM {preview["unpaid_leave_deduction"]:.2f}')
+
+            c4,c5,c6 = st.columns(3)
+            c4.metric("EPF", f"RM {preview['epf_employee']:.2f}")
+            c5.metric("SOCSO", f"RM {preview['socso_employee']:.2f}")
+            c6.metric("EIS", f"RM {preview['eis_employee']:.2f}")
+
+            c7,c8,c9 = st.columns(3)
+            c7.metric("SKBBK", f"RM {preview['skbbk']:.2f}")
+            c8.metric("PCB", f"RM {preview['pcb']:.2f}")
+            c9.metric("Allowance", f"RM {preview['allowance']:.2f}")
+
+            st.success(f"Net Pay: RM {preview['net_pay']:.2f}")
+            st.divider()
+
+            # Final Generate
+            if st.button("Generate Payslip", type="primary"):
+                try:
+                    employee = st.session_state["payslip_employee"]
+                    payslip = calculate_payslip(st.session_state["payslip_emp_id"], employee["name"],
+                        st.session_state["payslip_month"],
+                        st.session_state["payslip_basic"],
+                        st.session_state["payslip_allowance"],
+                        employee["date_of_birth"],
+                        st.session_state["payslip_pcb"],
+                        include_skbbk=st.session_state["payslip_skbbk"]
+                    )
+
+                    st.success(
+                        f"Payslip saved for {employee['name']} "
+                        f"— Net pay: RM {payslip['net_pay']:.2f}"
+                    )
+
+                    pdf_bytes = generate_payslip_pdf_bytes(employee,payslip)
+
+                    st.download_button("Download PDF",pdf_bytes,
+                        file_name=f"{employee['name']}_{payslip['month']}.pdf",
+                        mime="application/pdf"
+                    )
+
+                    # clear preview after successful generation
+                    del st.session_state["payslip_preview"]
+
+                except ValueError as e:
+                    st.error(str(e))
+
+# ---------- Payroll History ----------
+elif section == "Payroll History":
+    if payslips.empty:
+        st.caption("No payslips generated yet.")
+    else:
+        summary = payslips.groupby("month").agg(
+            employees=("employee_id", "count"),
+            total_amount=("net_pay", lambda s: s.astype(float).sum()),
+        ).reset_index().sort_values("month", ascending=False)
+        st.dataframe(summary, use_container_width=True)
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+        with st.expander("🗑️ Delete a payslip record (testing / data-entry mistakes only)"):
+            st.warning("This permanently removes the row from the Payslips sheet.")
+            options = {}
+            for _, row in payslips.iterrows():
+                label_name = row.get("employee_name") or row.get("employee_id", "Unknown")
+                month_label = row.get("month", "-")
+                try:
+                    net_pay_val = float(row.get("net_pay", 0) or 0)
+                except (ValueError, TypeError):
+                    net_pay_val = 0.0
+                options[f"{label_name} — {month_label} (RM {net_pay_val:.2f})"] = row.get("payslip_id", "")
+            selected_label = st.selectbox("Select payslip", list(options.keys()), key="delete_payslip_select")
+            confirm = st.checkbox("Yes, permanently delete this payslip", key="confirm_delete_payslip")
+            if st.button("Delete Payslip", disabled=not confirm, key="delete_payslip_btn"):
+                delete_row("Payslips", {"payslip_id": options[selected_label]})
+                st.success("Payslip deleted.")
+                st.rerun()
+
+# ---------- Upload EA Form ----------
+else:
+    st.caption(
+        "Upload each employee's annual EA Form (income statement) here. It will appear "
+        "under their 'My Payslips' page for them to download. Uploading again for the "
+        "same employee + year replaces the previous file."
+    )
+    if employees.empty:
+        st.caption("No employees found yet.")
+    else:
+        name_to_id = dict(zip(employees["name"], employees["employee_id"]))
+        with st.form("ea_form_upload"):
+            selected_name = st.selectbox("Employee", list(name_to_id.keys()), key="ea_employee")
+            year = st.text_input("Year", value=str(date.today().year - 1), placeholder="2025")
+            pdf_file = st.file_uploader("EA Form PDF", type=["pdf"])
+            submitted_ea = st.form_submit_button("Upload EA Form")
+
+        if submitted_ea:
+            if pdf_file is None:
+                st.error("Please choose a PDF file first.")
+            elif not year.strip():
+                st.error("Please enter the year this EA Form is for.")
+            else:
+                emp_id = name_to_id[selected_name]
+                upload_ea_form(emp_id, selected_name, year.strip(), pdf_file.read())
+                st.success(f"EA Form for {selected_name} ({year}) uploaded — they can now download it under My Payslips.")
+                st.rerun()
+
+    st.divider()
+    st.markdown("#### Uploaded EA Forms")
+    all_forms = get_all_ea_forms()
+    if not all_forms:
+        st.caption("No EA Forms uploaded yet.")
+    else:
+        st.dataframe(
+            [{"Employee": f["employee_name"], "Year": f["year"], "Uploaded": f["uploaded_date"]} for f in all_forms],
+            use_container_width=True,
+        )

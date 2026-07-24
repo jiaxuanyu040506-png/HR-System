@@ -1,10 +1,10 @@
 import streamlit as st
+import pandas as pd
 from utils.ui import inject_css, render_nav_sidebar
 from utils.auth import require_login
 from utils.sheets_client import read_table
 from utils.pdf_generator import generate_payslip_pdf_bytes
-from utils.ea_form import get_ea_forms_for_employee
-from utils.drive_client import download_pdf
+from utils.ea_forms import get_ea_forms_for_employee, download_ea_form_bytes
 
 inject_css()
 require_login()
@@ -54,18 +54,20 @@ else:
 
 st.divider()
 st.subheader("EA Form")
-st.caption("Yearly EA Forms uploaded by HR — click to download.")
-ea_forms = get_ea_forms_for_employee(st.session_state["employee_id"])
-if not ea_forms:
-    st.caption("No EA Form uploaded yet.")
+my_ea_forms = get_ea_forms_for_employee(st.session_state["employee_id"])
+if not my_ea_forms:
+    st.caption("No EA Form uploaded by HR yet.")
 else:
-    for f in ea_forms:
+    for form in my_ea_forms:
         col1, col2 = st.columns([3, 1])
-        col1.write(f"**EA Form {f['year']}** (uploaded {f.get('uploaded_date', '-')})")
-        pdf_bytes = download_pdf(f["drive_file_id"])
-        col2.download_button(
-            "Download", pdf_bytes,
-            file_name=f"EA_Form_{my_employee['name']}_{f['year']}.pdf",
-            mime="application/pdf",
-            key=f"dl_ea_{f['year']}",
-        )
+        col1.write(f"**EA Form {form['year']}** — uploaded {form.get('uploaded_date', '')}")
+        try:
+            pdf_bytes = download_ea_form_bytes(form["drive_file_id"])
+            col2.download_button(
+                "Download", pdf_bytes,
+                file_name=f"EA_{form['year']}_{my_employee['name']}.pdf",
+                mime="application/pdf",
+                key=f"ea_dl_{form['year']}",
+            )
+        except Exception:
+            col2.error("Couldn't fetch file.")

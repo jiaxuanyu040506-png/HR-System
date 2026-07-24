@@ -24,7 +24,7 @@ from datetime import date
 from utils.sheets_client import read_table
 from utils.leave_calc import get_leave_balance, get_all_pending_requests, get_today_on_leave_count, \
     approve_request, reject_request
-from utils.performance import get_completed_counts_by_employee
+from utils.performance import get_completed_counts_by_employee, get_assigned_vs_completed, get_employee_company_list, get_employee_performance_summary, get_employee_late_companies
 
 
 def _quick_access_button(col, label: str, icon: str, target_page: str):
@@ -34,14 +34,83 @@ def _quick_access_button(col, label: str, icon: str, target_page: str):
         st.switch_page(target_page)
 
 
-def render_performance_chart():
-    st.subheader("🏆 Performance — Completed Tasks by Employee")
-    counts = get_completed_counts_by_employee()
-    if counts.empty:
-        st.caption("No completed tasks logged yet.")
-    else:
-        st.bar_chart(counts)
+# Updated 24 July, 2026
+def render_performance_chart(selected_employee=None):
+    if selected_employee:
+        st.markdown(f"##### {selected_employee}'s Performance")
 
+        df = read_table("PerformanceRecords")
+        employee_df = df[df["employee_name"] == selected_employee]
+        total = len(employee_df)
+        completed = len(employee_df[employee_df["completion_date"] != ""])
+        on_time = len(employee_df[employee_df["status"] == "On Time"])
+        late = len(employee_df[employee_df["status"] == "Late"])
+
+        # summary = get_employee_performance_summary(selected_employee)
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric("Total Companies", total)
+        c2.metric("On Time", on_time)
+        c3.metric("Late", late)
+
+        st.divider()
+        st.markdown("##### Late Companies")
+        late_companies = get_employee_late_companies(selected_employee)
+        if late_companies.empty:
+            st.success("No late records 🎉")
+        else:
+            st.dataframe(late_companies,hide_index=True,use_container_width=True)
+
+        st.divider()
+
+        st.markdown("##### Company List")
+        companies = get_employee_company_list(selected_employee)
+
+        if not companies.empty:
+            st.dataframe(companies, hide_index=True, use_container_width=True,)
+        else:
+            st.info("No completed companies.")
+
+
+# def render_performance_chart(selected_employee=None):
+#     # st.subheader("🏆 Performance — Completed Tasks by Employee")
+#     if selected_employee:
+#         st.markdown(
+#             f"##### {selected_employee}'s Performance"
+#         )
+#         companies = get_employee_company_list(
+#             selected_employee
+#         )
+#         st.markdown(
+#             "##### Assigned Company List"
+#         )
+
+#         if not companies.empty:
+#             st.dataframe(
+#                 companies,
+#                 hide_index=True,
+#                 use_container_width=True
+#             )
+#         else:
+#             st.info(
+#                 "No assigned companies."
+#             )
+
+#         performance_df = get_assigned_vs_completed()
+#         if (
+#             not performance_df.empty
+#             and selected_employee in performance_df.index
+#         ):
+#             employee_perf = performance_df.loc[
+#                 [selected_employee]
+#             ]
+#             st.bar_chart(
+#                 employee_perf
+#             )
+#     else:
+#         counts = get_completed_counts_by_employee()
+#         if not counts.empty:
+#             st.bar_chart(counts)
 
 def _greeting():
     name = st.session_state["name"]

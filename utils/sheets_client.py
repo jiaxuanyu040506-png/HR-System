@@ -21,7 +21,8 @@ from google.oauth2.service_account import Credentials
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.readonly",   # 新增：允许按文件名搜索/打开表格
+    "https://www.googleapis.com/auth/drive.readonly",   # keeps existing "open sheet by name" working
+    "https://www.googleapis.com/auth/drive.file",       # NEW: lets the app upload/manage files it creates (EA Forms)
 ]
 
 MAIN_DB_NAME = "HR_System_Database"
@@ -29,10 +30,29 @@ RATE_DB_NAME = "SOCSO_EPF_RateConfig"
 
 
 @st.cache_resource
-def get_client():
+def get_credentials():
+    """The raw Google credentials object — reused by both gspread (Sheets)
+    and the Drive API client (drive_client.py), so there's only one login."""
     creds_dict = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    return gspread.authorize(creds)
+    return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+
+
+@st.cache_resource
+def get_client():
+    return gspread.authorize(get_credentials())
+
+# @st.cache_resource
+# def get_credentials():
+#     creds = Credentials.from_service_account_info(
+#         st.secrets["google_service_account"],
+#         scopes=SCOPES
+#     )
+#     return creds
+
+# @st.cache_resource
+# def get_client():
+#     creds = get_credentials()
+#     return gspread.authorize(creds)
 
 
 def get_sheet(tab_name: str):
@@ -131,6 +151,34 @@ def delete_row(tab_name: str, match: dict) -> bool:
             clear_sheet_caches()
             return True
     return False
+
+
+def delete_all_matching_rows(tab_name: str, match: dict) -> int:
+    """
+    Delete EVERY row matching all key/value pairs in `match` (not just
+    the first) — used for cascading deletes, e.g. removing all of an
+    employee's leave requests/payslips/attendance when the employee
+    record itself is deleted. Returns how many rows were deleted.
+    """
+    ws = get_sheet(tab_name)
+    headers = ws.row_values(1)
+    all_values = ws.get_all_values()
+
+    matching_row_indices = [
+        row_idx for row_idx, row in enumerate(all_values[1:], start=2)
+        if all(str(dict(zip(headers, row)).get(k, "")) == str(v) for k, v in match.items())
+    ]
+
+    # Delete from the bottom up so earlier row numbers don't shift under us.
+    for row_idx in reversed(matching_row_indices):
+        if hasattr(ws, "delete_row"):
+            ws.delete_row(row_idx)
+        else:
+            ws.delete_rows(row_idx, row_idx)
+
+    if matching_row_indices:
+        clear_sheet_caches()
+    return len(matching_row_indices)
 
 
 def get_row(tab_name: str, match: dict) -> dict | None:

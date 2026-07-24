@@ -32,8 +32,10 @@ after computing it on LHDN's official e-PCB calculator.
 from __future__ import annotations
 
 from datetime import date
-from utils.sheets_client import read_rate_table, append_row, update_row, get_row
-
+import calendar
+from utils.sheets_client import read_rate_table, append_row, update_row, get_row, read_table
+from utils.date_utils import parse_date
+from utils.leave_rules import is_public_holiday
 
 def get_age(date_of_birth: str) -> int:
     """
@@ -120,7 +122,7 @@ def lookup_socso_and_eis(basic_salary: float, age: int) -> dict:
 
 
 def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_salary: float,
-                       allowance: float, date_of_birth: str, pcb: float = 0.0) -> dict:
+                       allowance: float, date_of_birth: str, pcb: float = 0.0,  include_skbbk: bool = True,) -> dict:
     """
     Calculate a full payslip for one employee/month and save it to the
     Payslips sheet. This is the single function pages/3_Payslip_Management.py
@@ -138,14 +140,37 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
     """
     age = get_age(date_of_birth)
 
-    epf = lookup_epf(basic_salary, age)
-    socso_eis = lookup_socso_and_eis(basic_salary, age)
+    # 1. Unpaid Leave deduction
+    # working_days = get_working_days(month)
+    # unpaid_days = get_unpaid_leave_days(employee_id, month)
 
+    # if working_days > 0:
+    #     daily_rate = (float(basic_salary) / month)
+    #     unpaid_leave_deduction = round(daily_rate * unpaid_days, 2)
+    # else:
+    #     unpaid_leave_deduction = 0.0
+
+    year, month_num = map(int, month.split("-"))
+    days_in_month = calendar.monthrange(year, month_num)[1]
+    unpaid_days = get_unpaid_leave_days(employee_id, month)
+
+    daily_rate = float(basic_salary) / days_in_month
+    unpaid_leave_deduction = round(daily_rate * unpaid_days, 2)
+
+    adjusted_basic_salary = round( float(basic_salary) - unpaid_leave_deduction, 2)
+
+    # 2. Statutory calculation
+    epf = lookup_epf(adjusted_basic_salary, age)
+    socso_eis = lookup_socso_and_eis(adjusted_basic_salary, age)
+    skbbk_employee = (socso_eis["skbbk"] if include_skbbk else 0.0)
+
+    # 3. Salary calculation
+    gross_salary = round(adjusted_basic_salary + float(allowance), 2)
     net_pay = round(
-        float(basic_salary) + float(allowance)
+        gross_salary
         - epf["employee"]
         - socso_eis["socso_employee"]
-        - socso_eis["skbbk"]
+        - skbbk_employee
         - socso_eis["eis_employee"]
         - float(pcb),
         2,
@@ -159,12 +184,17 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
         "month": month,
         "basic_salary": basic_salary,
         "allowance": allowance,
+        # "working_days": working_days,
+        "unpaid_leave_days": unpaid_days,
+        "unpaid_leave_deduction": unpaid_leave_deduction,
+        "gross_salary": gross_salary,
         "epf_employee": epf["employee"],
         "epf_employer": epf["employer"],
         "socso_employee": socso_eis["socso_employee"],
         "socso_employer": socso_eis["socso_employer"],
         "eis_employee": socso_eis["eis_employee"],
-        "skbbk": socso_eis["skbbk"],
+        "skbbk": skbbk_employee,
+        "skbbk_status": "Yes" if include_skbbk else "No",
         "pcb": pcb,
         "net_pay": net_pay,
     }
@@ -179,3 +209,103 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
     else:
         append_row("Payslips", record)
     return record
+
+def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance: float, date_of_birth: str, 
+                    pcb: float = 0.0, include_skbbk: bool = True,) -> dict:
+    """
+    Preview payroll calculation before saving.
+
+    Does NOT write anything into Google Sheet.
+    Used for HR confirmation before generating payslip.
+    """
+
+    age = get_age(date_of_birth)
+
+    year, month_num = map(int, month.split("-"))
+    days_in_month = calendar.monthrange(year, month_num)[1]
+    unpaid_leave_days = get_unpaid_leave_days(employee_id, month)
+
+    daily_rate = float(basic_salary) / days_in_month
+    unpaid_leave_deduction = round(daily_rate * unpaid_leave_days, 2)
+
+    adjusted_salary = round(float(basic_salary) - unpaid_leave_deduction, 2)
+
+    # Statutory
+    epf = lookup_epf(adjusted_salary, age)                         # EPF
+    socso_eis = lookup_socso_and_eis(adjusted_salary, age)         # SOCSO + EIS + SKBBK
+    skbbk = (socso_eis["skbbk"] if include_skbbk else 0.0)      # SKBBK
+
+    gross_salary = (adjusted_salary + float(allowance))
+    total_deduction = (epf["employee"] + socso_eis["socso_employee"] + skbbk + socso_eis["eis_employee"] + float(pcb))
+    net_pay = round(gross_salary - total_deduction, 2)
+
+    return {
+        # "working_days": working_days,
+        "unpaid_leave_days": unpaid_leave_days,
+        "unpaid_leave_deduction":unpaid_leave_deduction,
+        "basic_salary": basic_salary,
+        "allowance": allowance,
+        "gross_salary": round(gross_salary, 2),
+        "epf_employee": epf["employee"],
+        "epf_employer": epf["employer"],
+        "socso_employee": socso_eis["socso_employee"],
+        "socso_employer": socso_eis["socso_employer"],
+        "skbbk": skbbk,
+        "eis_employee": socso_eis["eis_employee"],
+        "pcb": float(pcb),
+        "total_deduction": round(total_deduction,2),
+        "net_pay": net_pay,
+    }
+
+# Calculate working days
+def get_working_days(month: str) -> int:
+    """
+    Calculate working days for payroll month.
+
+    Exclude:
+    - Saturday
+    - Sunday
+    - Public Holiday
+
+    month format:
+    YYYY-MM
+    """
+
+    year, mon = map(int, month.split("-"))
+    total_days = calendar.monthrange(year, mon)[1]
+    working_days = 0
+
+    for day in range(1, total_days + 1):
+        current = date(year, mon, day)
+
+        # weekend
+        if current.weekday() >= 5:
+            continue
+
+        # public holiday
+        if is_public_holiday(current):
+            continue
+
+        working_days += 1
+    return working_days
+
+def get_unpaid_leave_days(employee_id: str,month: str) -> float:
+    df = read_table("LeaveRequests")
+
+    if df.empty:
+        return 0.0
+
+    df = df[(df["employee_id"] == employee_id) & (df["leave_type"] == "Unpaid") & (df["status"] == "Approved")]
+    if df.empty:
+        return 0.0
+
+    total = 0.0
+    for _, row in df.iterrows():
+        start = parse_date(row["start_date"])
+        end = parse_date(row["end_date"])
+
+        # only count leave inside this payroll month
+        if (start.strftime("%Y-%m") == month or end.strftime("%Y-%m") == month):
+            total += float(row.get("days",0))
+
+    return total

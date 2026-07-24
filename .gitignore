@@ -31,4 +31,6 @@ PCB.docx
 # Debug / helper files
 debug_login.py
 generate_hash.py
+rebuild_leave_balance.py 
+reset_payslips.py
 CURRENT_SESSION.md

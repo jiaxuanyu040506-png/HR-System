@@ -2,8 +2,10 @@ import streamlit as st
 from datetime import date
 from utils.ui import inject_css, render_nav_sidebar
 from utils.auth import require_login, hash_password
-from utils.leave_calc import get_leave_balance, init_year_balance
+from utils.leave_calc import get_leave_balance, recalculate_year_balance, init_year_balance
 from utils.sheets_client import read_table, append_row, update_row, delete_row
+from utils.employee_lifecycle import delete_employee_and_all_data
+
 
 inject_css()
 require_login()
@@ -18,6 +20,7 @@ MIN_DATE = date(1950, 1, 1)
 MAX_DATE = date.today()
 
 DEPARTMENTS = ["Secretary", "Service", "Account"]
+GENDER = ["Female", "Male"]
 
 if role != "hr_admin":
     st.subheader("Directory")
@@ -37,7 +40,7 @@ with tab_list:
     if df.empty:
         st.caption("No employees found yet.")
     else:
-        display_cols = [c for c in ["employee_id", "name", "email", "department", "status", "role", "admin_email"]
+        display_cols = [c for c in ["employee_id", "name", "email", "department", "status", "role"]
                          if c in df.columns]
         event = st.dataframe(
             df[display_cols],
@@ -62,15 +65,17 @@ with tab_add:
         name = st.text_input("Full Name")
         email = st.text_input("Email")
         phone = st.text_input("Phone Number")
-        department = st.selectbox("Department", DEPARTMENTS)
-        address = st.text_area("Address")
         col1, col2 = st.columns(2)
-        dob = col1.date_input("Date of Birth", value=date(1990, 1, 1), min_value=MIN_DATE, max_value=MAX_DATE)
-        join_date = col2.date_input("Join Date", value=date.today(), min_value=MIN_DATE, max_value=MAX_DATE)
+        department = col1.selectbox("Department", DEPARTMENTS)
+        gender = col2.selectbox("Gender", GENDER)
+        address = st.text_area("Address")
         col3, col4 = st.columns(2)
-        income_tax_no = col3.text_input("Income Tax No.")
-        epf_no = col4.text_input("EPF No.")
-        admin_email = st.text_input("Admin/Manager Email (leave blank if none)")
+        dob = col3.date_input("Date of Birth", value=date(1990, 1, 1), min_value=MIN_DATE, max_value=MAX_DATE)
+        join_date = col4.date_input("Join Date", value=date.today(), min_value=MIN_DATE, max_value=MAX_DATE)
+        col5, col6 = st.columns(2)
+        income_tax_no = col5.text_input("Income Tax No.")
+        epf_no = col6.text_input("EPF No.")
+        # admin_email = st.text_input("Admin/Manager Email (leave blank if none)")
         bank_account = st.text_input("Bank Account")
         initial_password = st.text_input("Initial Password", value="Welcome123")
         emp_role = st.selectbox("Role", ["employee", "manager", "hr_admin"])
@@ -88,13 +93,14 @@ with tab_add:
                 "email": email,
                 "phone": phone,
                 "department": department,
+                "gender": gender,
                 "address": address,
                 "date_of_birth": str(dob),
                 "join_date": str(join_date),
                 "income_tax_no": income_tax_no,
                 "epf_no": epf_no,
                 "status": "Active",
-                "admin_email": admin_email,
+                # "admin_email": admin_email,
                 "bank_account": bank_account,
                 "password_hash": hash_password(initial_password),
                 "force_password_reset": "Yes",
@@ -130,25 +136,31 @@ with tab_edit:
             edit_name = st.text_input("Full Name", value=str(employee.get("name", "")))
             edit_email = st.text_input("Email", value=str(employee.get("email", "")))
             edit_phone = st.text_input("Phone Number", value=str(employee.get("phone", "")))
+            col1, col2 = st.columns(2)
             dept_value = str(employee.get("department", DEPARTMENTS[0]))
-            edit_department = st.selectbox(
+            edit_department = col1.selectbox(
                 "Department", DEPARTMENTS,
                 index=DEPARTMENTS.index(dept_value) if dept_value in DEPARTMENTS else 0,
             )
+            gender_value = str(employee.get("gender", GENDER[0]))
+            edit_gender = col2.selectbox(
+                "Gender", GENDER,
+                index=GENDER.index(gender_value) if gender_value in GENDER else 0,
+            )
             edit_address = st.text_area("Address", value=str(employee.get("address", "")))
-            col1, col2 = st.columns(2)
-            edit_status = col1.selectbox(
+            col3, col4 = st.columns(2)
+            edit_status = col3.selectbox(
                 "Status", ["Active", "Resigned"],
                 index=0 if str(employee.get("status", "Active")) == "Active" else 1,
             )
-            edit_role = col2.selectbox(
+            edit_role = col4.selectbox(
                 "Role", ["employee", "manager", "hr_admin"],
                 index=["employee", "manager", "hr_admin"].index(str(employee.get("role", "employee"))),
             )
-            col3, col4 = st.columns(2)
-            edit_income_tax_no = col3.text_input("Income Tax No.", value=str(employee.get("income_tax_no", "")))
-            edit_epf_no = col4.text_input("EPF No.", value=str(employee.get("epf_no", "")))
-            edit_admin = st.text_input("Admin/Manager Email", value=str(employee.get("admin_email", "")))
+            col5, col6 = st.columns(2)
+            edit_income_tax_no = col5.text_input("Income Tax No.", value=str(employee.get("income_tax_no", "")))
+            edit_epf_no = col6.text_input("EPF No.", value=str(employee.get("epf_no", "")))
+            # edit_admin = st.text_input("Admin/Manager Email", value=str(employee.get("admin_email", "")))
             edit_bank = st.text_input("Bank Account", value=str(employee.get("bank_account", "")))
             save = st.form_submit_button("Save Changes", use_container_width=True)
 
@@ -161,12 +173,13 @@ with tab_edit:
                     "email": edit_email,
                     "phone": edit_phone,
                     "department": edit_department,
+                    "gender": edit_gender,
                     "address": edit_address,
                     "status": edit_status,
                     "role": edit_role,
                     "income_tax_no": edit_income_tax_no,
                     "epf_no": edit_epf_no,
-                    "admin_email": edit_admin,
+                    # "admin_email": edit_admin,
                     "bank_account": edit_bank,
                 },
             )
@@ -174,13 +187,14 @@ with tab_edit:
             st.success("Employee updated.")
             st.rerun()
 
+        # Updated 17 July
         year = date.today().year
         balance = get_leave_balance(employee["employee_id"], year)
         if balance is None:
             st.warning(f"No leave balance row found for {year}. You can initialize it when needed.")
         else:
-            annual_remaining = int(balance["annual_total"]) - float(balance["annual_used"])
-            sick_remaining = float(balance["sick_balance"])
+            annual_remaining = float(balance["annual_total"]) - float(balance["annual_used"])
+            sick_remaining = float(balance["medical_total"]) - float(balance["medical_used"])
             st.markdown("#### Leave Balance (Current Year)")
             st.table({
                 "Annual Total": [balance["annual_total"]],
@@ -188,18 +202,29 @@ with tab_edit:
                 "Annual Remaining": [annual_remaining],
                 "Sick Remaining": [sick_remaining],
             })
+            if st.button("🔄 Recalculate this year's leave balance", key="recalc_balance_btn"):
+                recalculate_year_balance(employee["employee_id"], year)
+                st.success("Recalculated using the current entitlement rules.")
+                st.rerun()
+            st.caption(
+                "Use this if the annual/medical days shown look wrong — e.g. after the "
+                "proration or probation rules were updated, since existing balances "
+                "aren't recalculated automatically."
+            )
 
         st.divider()
         with st.expander("🗑️ Delete this employee record (testing / data-entry mistakes only)"):
             st.warning(
-                "This permanently removes the row from the Employees sheet — it does NOT "
-                "touch their leave/payslip history, which will be left pointing at a "
-                "deleted employee. For a real departure, use 'Mark as Resigned' via the "
-                "Status field above instead."
+                "This permanently removes the employee AND all their linked data: "
+                "leave requests, leave balances, payslips, attendance, performance "
+                "records, and EA Forms. This cannot be undone. For a real departure, "
+                "use 'Mark as Resigned' via the Status field above instead — that "
+                "keeps their history intact."
             )
-            confirm = st.checkbox(f"Yes, permanently delete {employee['name']}", key="confirm_delete_employee")
+            confirm = st.checkbox(f"Yes, permanently delete {employee['name']} and ALL their data", key="confirm_delete_employee")
             if st.button("Delete Employee", disabled=not confirm, key="delete_employee_btn"):
-                delete_row("Employees", {"employee_id": employee["employee_id"]})
+                deleted_summary = delete_employee_and_all_data(employee["employee_id"])
                 st.session_state.pop("edit_employee_id", None)
-                st.success("Employee record deleted.")
+                details = ", ".join(f"{k}: {v}" for k, v in deleted_summary.items() if v)
+                st.success(f"Employee and all linked data deleted. ({details or 'no linked records found'})")
                 st.rerun()

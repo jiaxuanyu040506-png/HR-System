@@ -1,6 +1,8 @@
 import streamlit as st
-from datetime import date
+from datetime import date, timedelta
+from datetime import date as _date
 import pandas as pd
+from collections import defaultdict
 
 try:
     import altair as alt
@@ -10,6 +12,8 @@ except ImportError:
 from utils.ui import inject_css, render_nav_sidebar
 from utils.auth import require_role
 from utils.sheets_client import read_table
+from utils.date_utils import parse_date
+from utils.leave_rules import get_sick_leave_entitlement
 
 try:
     from streamlit_calendar import calendar
@@ -22,24 +26,21 @@ try:
         get_pending_requests, get_all_pending_requests, get_all_requests,
         get_calendar_events, record_leave_request, approve_request, reject_request,
         delete_leave_request, get_monthly_approved_leave_headcount, get_employee_leave_summaries,
-        get_leave_days_by_employee,
+        get_employee_monthly_leave_days,  get_employee_leave_type_days,
     )
 except ImportError:
     from utils.leave_calc import get_pending_requests, get_all_pending_requests, approve_request, reject_request, delete_leave_request
 
-    def get_leave_days_by_employee(year: int | None = None):
-        import pandas as pd
-        return pd.DataFrame()
+    def get_employee_monthly_leave_days(year: int | None = None):
+        return []
+    
+    def get_employee_leave_type_days(year: int | None = None):
+        return []
 
     def record_leave_request(*args, **kwargs):
         raise ImportError("record_leave_request is not available")
 
     def get_monthly_approved_leave_headcount(year: int | None = None):
-        from utils.sheets_client import read_table
-        from utils.date_utils import parse_date
-        from datetime import date as _date
-        from collections import defaultdict
-
         df = read_table("LeaveRequests")
         if df.empty:
             return {}
@@ -69,9 +70,6 @@ except ImportError:
         return {f"{year}-{month:02d}": len(ids) for (year, month), ids in sorted(month_employee_map.items())}
 
     def get_employee_leave_summaries(year: int | None = None):
-        from utils.sheets_client import read_table
-        from utils.leave_rules import get_sick_leave_entitlement
-
         if year is None:
             year = date.today().year
         employees = read_table("Employees")
@@ -86,44 +84,49 @@ except ImportError:
             emp_id = str(employee["employee_id"])
             key = (emp_id, year)
             balance = balance_rows.get(key)
+
             annual_total = float(balance["annual_total"]) if balance is not None else 0.0
             annual_used = float(balance["annual_used"]) if balance is not None else 0.0
-            annual_remaining = annual_total - annual_used
-            sick_balance = float(balance["sick_balance"]) if balance is not None else 0.0
-            sick_entitlement = 0.0
-            medical_used = 0.0
-            if balance is not None:
-                try:
-                    sick_entitlement = float(get_sick_leave_entitlement(employee["join_date"]))
-                    medical_used = max(sick_entitlement - sick_balance, 0.0)
-                except Exception:
-                    sick_entitlement = sick_balance
-                    medical_used = 0.0
+            # annual_remaining = annual_total - annual_used
+
+            medical_total = float(balance["medical_total"]) if balance is not None else 0.0
+            medical_used = float(balance["medical_used"]) if balance is not None else 0.0
+
+            unpaid_used = float(balance.get("unpaid_used", 0)) if balance is not None else 0.0
+
+            # sick_entitlement = 0.0
+            # medical_used = 0.0
+            # if balance is not None:
+            #     try:
+            #         sick_entitlement = float(get_sick_leave_entitlement(employee["join_date"]))
+            #         medical_used = max(sick_entitlement - sick_balance, 0.0)
+            #     except Exception:
+            #         sick_entitlement = sick_balance
+            #         medical_used = 0.0
             summaries.append({
                 "employee_id": emp_id,
                 "employee_name": employee.get("name", ""),
                 "department": employee.get("department", ""),
                 "annual_total": annual_total,
                 "annual_used": annual_used,
-                "annual_remaining": annual_remaining,
+                "annual_remaining": annual_total - annual_used,
+                # "annual_remaining": annual_remaining,
+                "medical_total": medical_total,
                 "medical_used": medical_used,
-                "sick_balance": sick_balance,
+                "medical_remaining": medical_total - medical_used,
+                # "sick_balance": sick_balance,
+                "unpaid_used": unpaid_used,
                 "year": year,
             })
         return summaries
 
     def get_all_requests():
-        from utils.sheets_client import read_table
         requests = read_table("LeaveRequests")
         if requests.empty:
             return []
         return requests.sort_values("submit_date", ascending=False).to_dict("records")
 
     def get_calendar_events():
-        from utils.sheets_client import read_table
-        from utils.date_utils import parse_date
-        from datetime import timedelta
-
         df = read_table("LeaveRequests")
         if df.empty:
             return []
@@ -141,7 +144,7 @@ except ImportError:
         for _, row in approved.iterrows():
             end_exclusive = parse_date(row["end_date"]) + timedelta(days=1)
             events.append({
-                "title": f"{row.get('employee_name', row['employee_id'])} - {row['leave_type']}",
+                "title": row.get("employee_name", row["employee_id"]),
                 "start": str(row["start_date"]),
                 "end": str(end_exclusive),
                 "color": colors.get(row["leave_type"], "#2f80ed"),
@@ -154,10 +157,20 @@ render_nav_sidebar(st.session_state["role"])
 st.title("Leave Management")
 
 role = st.session_state["role"]
-section = st.radio(
-    "Section", ["Leave Approval", "Leave Calendar", "Record Leave", "Employee Leave History"],
-    horizontal=True, label_visibility="collapsed",
+# section = st.radio(
+#     "Section", ["Leave Approval", "Leave Calendar", "Record Leave", "Employee Leave History"],
+#     horizontal=True, label_visibility="collapsed",
+# )
+options = {
+    "✅ Leave Approval": "Leave Approval",
+    "📅 Leave Calendar": "Leave Calendar",
+    "📝 Record Leave": "Record Leave",
+    "📋 Employee Leave History": "Employee Leave History",
+}
+selected = st.segmented_control(
+    "", list(options.keys()), default="✅ Leave Approval", label_visibility="collapsed",
 )
+section = options[selected]
 st.divider()
 
 # ---------- Record Leave ----------
@@ -166,55 +179,114 @@ if section == "Record Leave":
 
     if view_mode == "Summary":
         st.subheader("Leave Summary")
+        # st.markdown("左边：每位员工的请假天数（按月堆叠）。右边：每月有多少人请假。")
+
         month_counts = get_monthly_approved_leave_headcount(date.today().year)
         summaries = get_employee_leave_summaries(date.today().year)
-        leave_by_employee = get_leave_days_by_employee(date.today().year)
+        employee_by_type = get_employee_leave_type_days(date.today().year)
+        employee_monthly = get_employee_monthly_leave_days(date.today().year)
 
         col_left, col_right = st.columns(2)
 
+        # with col_left:
+        #     st.markdown("##### 每位员工请假天数（按月）")
+        #     if employee_monthly:
+        #         emp_month_df = pd.DataFrame(employee_monthly)
+        #         if alt is not None:
+        #             stacked = alt.Chart(emp_month_df).mark_bar().encode(
+        #                 x=alt.X("employee_name:N", title="Employee", sort=None),
+        #                 y=alt.Y("days:Q", title="Days on leave"),
+        #                 color=alt.Color("month:N", title="Month"),
+        #                 tooltip=["employee_name", "month", "days"],
+        #             )
+        #             st.altair_chart(stacked, use_container_width=True)
+        #         else:
+        #             pivot = emp_month_df.pivot_table(
+        #                 index="employee_name", columns="month", values="days", aggfunc="sum", fill_value=0
+        #             )
+        #             st.bar_chart(pivot)
+        #     else:
+        #         st.info("目前还没有已批准的请假记录。")
+
+        # with col_right:
+        #     st.markdown("##### 每月请假人数")
+        #     if month_counts:
+        #         donut_df = pd.DataFrame({
+        #             "month": list(month_counts.keys()),
+        #             "employees_on_leave": list(month_counts.values()),
+        #         })
+        #         if alt is not None:
+        #             donut = alt.Chart(donut_df).mark_arc(innerRadius=60).encode(
+        #                 theta=alt.Theta(field="employees_on_leave", type="quantitative"),
+        #                 color=alt.Color(field="month", type="nominal", legend=alt.Legend(title="Month")),
+        #                 tooltip=["month", "employees_on_leave"],
+        #             )
+        #             st.altair_chart(donut, use_container_width=True)
+        #         else:
+        #             st.bar_chart(donut_df.set_index("month")["employees_on_leave"])
+        #     else:
+        #         st.info("目前还没有已批准的请假记录。")
+
         with col_left:
-            st.markdown("##### Leave Days per Employee (by type)")
-            if leave_by_employee.empty:
-                st.info("No approved leave yet this year.")
-            else:
+            st.markdown("##### 每位员工请假天数")
+            if employee_by_type:
+                emp_type_df = pd.DataFrame(employee_by_type)
+                totals_df = emp_type_df.groupby("employee_name", as_index=False)["days"].sum()
                 if alt is not None:
-                    long_df = leave_by_employee.reset_index().melt(
-                        id_vars="employee_name", var_name="leave_type", value_name="days"
-                    )
-                    chart = alt.Chart(long_df).mark_bar().encode(
+                    bars = alt.Chart(emp_type_df).mark_bar().encode(
                         x=alt.X("employee_name:N", title="Employee", sort=None),
-                        y=alt.Y("days:Q", title="Days"),
+                        y=alt.Y("days:Q", title="Days on leave", stack="zero"),
                         color=alt.Color("leave_type:N", title="Leave Type"),
                         tooltip=["employee_name", "leave_type", "days"],
+                    ).properties(height=max(320, 25 * len(emp_type_df)))
+                    labels = alt.Chart(totals_df).mark_text(dy=-8, fontWeight="bold").encode(
+                        x=alt.X("employee_name:N", sort=None),
+                        y=alt.Y("days:Q"),
+                        text=alt.Text("days:Q", format=".1f"),
                     )
-                    st.altair_chart(chart, use_container_width=True)
+                    st.altair_chart(bars + labels, use_container_width=True)
                 else:
-                    st.bar_chart(leave_by_employee)
+                    pivot = emp_type_df.pivot_table(
+                        index="employee_name", columns="leave_type", values="days", aggfunc="sum", fill_value=0
+                    )
+                    st.bar_chart(pivot)
+            else:
+                st.info("目前还没有已批准的请假记录。")
 
         with col_right:
-            st.markdown("##### Employees on Leave per Month")
+            st.markdown("##### 每月请假人数")
             if month_counts:
-                summary_df = pd.DataFrame({
-                    "month": list(month_counts.keys()),
+                import calendar as _calendar
+                donut_df = pd.DataFrame({
+                    "month_key": list(month_counts.keys()),
                     "employees_on_leave": list(month_counts.values()),
                 })
+                donut_df["month"] = donut_df["month_key"].apply(
+                    lambda k: _calendar.month_abbr[int(k.split("-")[1])]
+                )
                 if alt is not None:
-                    pie = alt.Chart(summary_df).mark_arc(innerRadius=60).encode(
-                        theta=alt.Theta(field="employees_on_leave", type="quantitative"),
-                        color=alt.Color(field="month", type="nominal", legend=alt.Legend(title="Month")),
+                    hbar = alt.Chart(donut_df).mark_bar().encode(
+                        y=alt.Y("month:N", title="Month", sort=list(donut_df["month"])),
+                        x=alt.X("employees_on_leave:Q", title="Employees on leave",
+                                axis=alt.Axis(format="d", tickMinStep=1)),
                         tooltip=["month", "employees_on_leave"],
+                    ).properties(height=max(320, 50 * len(donut_df)))
+                    hbar_labels = alt.Chart(donut_df).mark_text(dx=8, align="left").encode(
+                        y=alt.Y("month:N", sort=list(donut_df["month"])),
+                        x=alt.X("employees_on_leave:Q"),
+                        text=alt.Text("employees_on_leave:Q", format="d"),
                     )
-                    st.altair_chart(pie, use_container_width=True)
+                    st.altair_chart(hbar + hbar_labels, use_container_width=True)
                 else:
-                    st.bar_chart(summary_df.set_index("month")["employees_on_leave"])
+                    st.bar_chart(donut_df.set_index("month")["employees_on_leave"])
             else:
-                st.info("No approved leave requests yet.")
+                st.info("目前还没有已批准的请假记录。")
 
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+        st.divider()
         if summaries:
             summary_table = pd.DataFrame(summaries)[[
                 "employee_name", "department", "annual_total", "annual_used",
-                "annual_remaining", "medical_used", "unpaid_used"
+                "annual_remaining", "medical_total", "medical_used", "medical_remaining", "unpaid_used",
             ]]
             summary_table = summary_table.rename(columns={
                 "employee_name": "姓名",
@@ -222,8 +294,10 @@ if section == "Record Leave":
                 "annual_total": "Annual Total",
                 "annual_used": "Annual Used",
                 "annual_remaining": "Annual Remaining",
+                "medical_total": "Medical Total",
                 "medical_used": "Medical Used",
-                "unpaid_used": "Unpaid Leave Taken",
+                "medical_remaining": "Medical Remaining",
+                "unpaid_used": "Unpaid Used",
             })
             st.markdown("#### 员工请假余额汇总")
             st.dataframe(summary_table, use_container_width=True)
@@ -277,6 +351,7 @@ elif section == "Leave Calendar":
         )
     else:
         events = get_calendar_events()
+        # st.write(events)
         calendar_options = {
             "initialView": "dayGridMonth",
             "height": 650,
@@ -340,63 +415,84 @@ elif section == "Leave Approval":
 
 # ---------- Employee Leave History ----------
 else:
-    st.subheader("Employee Leave History")
+    sub_view = st.radio("Sub-view", ["Pending", "History"], horizontal=True, label_visibility="collapsed")
     all_requests = get_all_requests()
-    employees_df = read_table("Employees")
 
-    if employees_df.empty:
-        st.caption("No employees found.")
-    else:
-        emp_names = employees_df["name"].tolist()
-        selected_emp_name = st.selectbox(
-            "Select an employee to view their leave history", emp_names, key="history_emp_select"
+    # st.subheader("Employee Leave History")
+
+    def _render_request_card(req, show_delete=True):
+        st.markdown(
+            "<div class='leave-approval-card'>"
+            f"<h4>{req.get('employee_name', req['employee_id'])}</h4>"
+            f"<div class='leave-approval-note'>{req.get('reason', 'No reason provided.')}</div>"
+            "<div class='leave-approval-meta'>"
+            f"<div><strong>Leave type</strong>{req['leave_type']}</div>"
+            f"<div><strong>Start</strong>{req['start_date']}</div>"
+            f"<div><strong>End</strong>{req['end_date']}</div>"
+            f"<div><strong>Days</strong>{req['days']} day(s)</div>"
+            f"<div><strong>Session</strong>{req.get('session', 'Full Day')}</div>"
+            f"<div><strong>Status</strong>{req.get('status', 'Unknown')}</div>"
+            f"<div><strong>Submitted</strong>{req.get('submit_date', 'Unknown')}</div>"
+            f"<div><strong>Approved by</strong>{req.get('approved_by', 'N/A')}</div>"
+            f"<div><strong>Request ID</strong>{req['request_id']}</div>"
+            "</div>"
+            "</div>",
+            unsafe_allow_html=True,
         )
-        selected_emp_id = employees_df[employees_df["name"] == selected_emp_name].iloc[0]["employee_id"]
-        emp_requests = [r for r in all_requests if str(r.get("employee_id")) == str(selected_emp_id)]
-
-        sub_view = st.radio("Sub-view", ["Pending", "History"], horizontal=True, label_visibility="collapsed")
+        if show_delete:
+            cols = st.columns([1, 3])
+            with cols[0]:
+                if st.button("Delete Entry", key=f"delete_{req['request_id']}", use_container_width=True):
+                    if delete_leave_request(req["request_id"]):
+                        st.success(f"Leave record {req['request_id']} deleted.")
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete the selected leave record.")
+            with cols[1]:
+                st.caption("Use this button to remove an incorrectly entered or mistaken leave record.")
         st.divider()
 
-        if sub_view == "Pending":
-            rows = [r for r in emp_requests if r["status"] == "Pending"]
-        else:
-            rows = [r for r in emp_requests if r["status"] != "Pending"]
-
+    if sub_view == "Pending":
+        rows = [r for r in all_requests if r["status"] == "Pending"]
+        st.subheader("Pending Requests")
         if not rows:
-            st.caption(f"Nothing to show for {selected_emp_name}.")
+            st.caption("Nothing to show.")
         else:
             for req in rows:
-                st.markdown(
-                    "<div class='leave-approval-card'>"
-                    f"<h4>{req.get('employee_name', req['employee_id'])}</h4>"
-                    f"<div class='leave-approval-note'>{req.get('reason', 'No reason provided.')}</div>"
-                    "<div class='leave-approval-meta'>"
-                    f"<div><strong>Leave type</strong>{req['leave_type']}</div>"
-                    f"<div><strong>Start</strong>{req['start_date']}</div>"
-                    f"<div><strong>End</strong>{req['end_date']}</div>"
-                    f"<div><strong>Days</strong>{req['days']} day(s)</div>"
-                    f"<div><strong>Session</strong>{req.get('session', 'Full Day')}</div>"
-                    f"<div><strong>Status</strong>{req.get('status', 'Unknown')}</div>"
-                    f"<div><strong>Submitted</strong>{req.get('submit_date', 'Unknown')}</div>"
-                    f"<div><strong>Approved by</strong>{req.get('approved_by', 'N/A')}</div>"
-                    f"<div><strong>Request ID</strong>{req['request_id']}</div>"
-                    "</div>"
-                    "</div>",
-                    unsafe_allow_html=True,
+                _render_request_card(req)
+
+    else:
+        history_rows = [r for r in all_requests if r["status"] != "Pending"]
+        if not history_rows:
+            st.caption("No history yet.")
+        else:
+            # Master list: one row per employee with a history count — click to drill in.
+            from collections import Counter
+            counts = Counter(r.get("employee_name", r["employee_id"]) for r in history_rows)
+            employee_list = sorted(counts.keys())
+
+            selected_employee = st.session_state.get("history_selected_employee")
+            if selected_employee not in employee_list:
+                selected_employee = None
+
+            if selected_employee is None:
+                st.caption("Click an employee to view their individual leave history.")
+                list_df = pd.DataFrame({
+                    "Employee": employee_list,
+                    "Records": [counts[name] for name in employee_list],
+                })
+                event = st.dataframe(
+                    list_df, use_container_width=True, hide_index=True,
+                    on_select="rerun", selection_mode="single-row", key="history_employee_list",
                 )
-                cols = st.columns([1, 3])
-                with cols[0]:
-                    if st.button(
-                        "Delete Entry",
-                        key=f"delete_{req['request_id']}",
-                        use_container_width=True,
-                    ):
-                        if delete_leave_request(req["request_id"]):
-                            st.success(f"Leave record {req['request_id']} deleted.")
-                            st.rerun()
-                        else:
-                            st.error("Failed to delete the selected leave record.")
-                with cols[1]:
-                    st.caption("Use this button to remove an incorrectly entered or mistaken leave record.")
-                st.divider()
-            st.divider()
+                if event and event.selection and event.selection["rows"]:
+                    st.session_state["history_selected_employee"] = employee_list[event.selection["rows"][0]]
+                    st.rerun()
+            else:
+                if st.button("← Back to employee list"):
+                    st.session_state.pop("history_selected_employee", None)
+                    st.rerun()
+                st.markdown(f"#### {selected_employee}'s Leave History")
+                for req in history_rows:
+                    if req.get("employee_name", req["employee_id"]) == selected_employee:
+                        _render_request_card(req)

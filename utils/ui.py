@@ -167,6 +167,7 @@ def render_nav_sidebar(role: str):
             st.page_link("pages/9_HR_Overview.py", label="🏠 Dashboard")
             st.page_link("pages/1_Employee_Management.py", label="👥 All Employees")
             st.page_link("pages/2_Leave_Management.py", label="🗓️ Leave Approvals")
+            st.page_link("pages/11_Attendance.py", label="🕐 Attendance")
             st.page_link("pages/5_Payroll_Management.py", label="💰 Payslips")
             st.page_link("pages/10_Performance.py", label="📌 Performance")
             st.page_link("pages/7_Reports.py", label="📊 Reports")
