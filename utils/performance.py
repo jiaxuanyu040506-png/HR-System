@@ -48,7 +48,7 @@ def add_company(company_name: str, category: str, company_type: str = ""):
     })
 
 
-def submit_performance_record(company_name: str,
+def submit_performance_record(company_name: str, category: str,
                                employee_id: str, employee_name: str,
                                due_date_: date, completion_date_: date | None):
                       
@@ -76,6 +76,7 @@ def submit_performance_record(company_name: str,
     append_row("PerformanceRecords", {
         "record_id": f"PF{uuid.uuid4().hex[:8].upper()}",
         "company_name": company_name,
+        "category": category,
         "employee_id": employee_id,
         "employee_name": employee_name,
         "due_date": str(due_date_),
