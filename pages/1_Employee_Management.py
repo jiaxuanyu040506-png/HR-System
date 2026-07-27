@@ -22,7 +22,7 @@ MAX_DATE = date.today()
 DEPARTMENTS = ["Secretary", "Service", "Account"]
 GENDER = ["Female", "Male"]
 
-if role != "hr_admin":
+if role != "hr_admin" and role != "manager":
     st.subheader("Directory")
     display_cols = ["employee_id", "name", "email"]
     st.dataframe(df[display_cols] if not df.empty else df, use_container_width=True)
