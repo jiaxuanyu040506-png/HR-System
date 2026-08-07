@@ -51,7 +51,8 @@ if section == "Generate Payslip":
             selected_name = st.selectbox("Employee", list(name_to_id.keys()))
             month = st.text_input("Month (YYYY-MM)", placeholder="2026-07")
             basic_salary = st.number_input("Basic salary (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
-            allowance = st.number_input("Allowance (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
+            allowance = st.number_input("Bonus/ Red Packet (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
+            bik = st.number_input("BIK (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
             skbbk_option = st.radio("SKBBK Contribution", ["Yes", "No"], horizontal=True)
             pcb = st.number_input("PCB (RM)", min_value=0.0, step=1.0, value=None, placeholder="0.00")
             preview_clicked = st.form_submit_button("Preview Payslip")
@@ -64,7 +65,7 @@ if section == "Generate Payslip":
 
             try:
                 preview = preview_payslip(employee_id=emp_id,month=month,
-                basic_salary=basic_salary,allowance=allowance or 0.0,
+                basic_salary=basic_salary,allowance=allowance or 0.0, bik=bik or 0.0,
                 date_of_birth=employee["date_of_birth"], pcb=pcb or 0.0,
                 include_skbbk=(skbbk_option=="Yes")
                 )
@@ -76,6 +77,7 @@ if section == "Generate Payslip":
                 st.session_state["payslip_month"] = month
                 st.session_state["payslip_basic"] = basic_salary or 0.0
                 st.session_state["payslip_allowance"] = allowance or 0.0
+                st.session_state["payslip_bik"] = bik or 0.0
                 st.session_state["payslip_pcb"] = pcb or 0.0
                 st.session_state["payslip_skbbk"] = (
                     skbbk_option == "Yes"
@@ -96,15 +98,16 @@ if section == "Generate Payslip":
             c2.metric("Unpaid Leave", f'{preview["unpaid_leave_days"]:.1f} Days')
             c3.metric("UPL Deduction", f'-RM {preview["unpaid_leave_deduction"]:.2f}')
 
-            c4,c5,c6 = st.columns(3)
+            c4, c5, c6, c7 = st.columns(4)
             c4.metric("EPF", f"RM {preview['epf_employee']:.2f}")
             c5.metric("SOCSO", f"RM {preview['socso_employee']:.2f}")
             c6.metric("EIS", f"RM {preview['eis_employee']:.2f}")
+            c7.metric("BIK", f"RM {preview.get('bik', st.session_state.get('payslip_bik', 0.0)):.2f}")
 
-            c7,c8,c9 = st.columns(3)
-            c7.metric("SKBBK", f"RM {preview['skbbk']:.2f}")
-            c8.metric("PCB", f"RM {preview['pcb']:.2f}")
-            c9.metric("Allowance", f"RM {preview['allowance']:.2f}")
+            c8, c9, c10 = st.columns(3)
+            c8.metric("SKBBK", f"RM {preview['skbbk']:.2f}")
+            c9.metric("PCB", f"RM {preview['pcb']:.2f}")
+            c10.metric("Allowance", f"RM {preview['allowance']:.2f}")
 
             st.success(f"Net Pay: RM {preview['net_pay']:.2f}")
             st.divider()
@@ -119,8 +122,12 @@ if section == "Generate Payslip":
                         st.session_state["payslip_allowance"],
                         employee["date_of_birth"],
                         st.session_state["payslip_pcb"],
-                        include_skbbk=st.session_state["payslip_skbbk"]
+                        include_skbbk=st.session_state["payslip_skbbk"],
+                        bik=st.session_state["payslip_bik"],
                     )
+
+                    if "bik" not in payslip:
+                        payslip["bik"] = st.session_state["payslip_bik"]
 
                     st.success(
                         f"Payslip saved for {employee['name']} "
@@ -145,11 +152,46 @@ elif section == "Payroll History":
     if payslips.empty:
         st.caption("No payslips generated yet.")
     else:
-        summary = payslips.groupby("month").agg(
-            employees=("employee_id", "count"),
-            total_amount=("net_pay", lambda s: s.astype(float).sum()),
-        ).reset_index().sort_values("month", ascending=False)
-        st.dataframe(summary, use_container_width=True)
+        # summary = payslips.groupby("month").agg(
+        #     employees=("employee_id", "count"),
+        #     total_amount=("net_pay", lambda s: s.astype(float).sum()),
+        # ).reset_index().sort_values("month", ascending=False)
+        # st.dataframe(summary, use_container_width=True)
+
+        # Updated 7 Aug, 2026 - Add month filter for Payroll History
+        month_options = sorted(payslips["month"].dropna().unique(), reverse=True)
+        month_options = ["All Months"] + month_options
+        selected_month = st.selectbox("Filter by month", month_options, index=0)
+
+        filtered_payslips = (
+            payslips
+            if selected_month == "All Months"
+            else payslips[payslips["month"] == selected_month]
+        )
+
+        total_employees = filtered_payslips["employee_id"].nunique()
+        total_amount = filtered_payslips["net_pay"].astype(float).sum() if not filtered_payslips.empty else 0.0
+
+        c1, c2 = st.columns(2)
+        c1.metric("Total Employees", total_employees)
+        c2.metric("Total Payroll", f"RM {total_amount:,.2f}")
+
+        if selected_month == "All Months":
+            summary = filtered_payslips.groupby("month").agg(
+                employees=("employee_id", "count"),
+                total_amount=("net_pay", lambda s: s.astype(float).sum()),
+            ).reset_index().sort_values("month", ascending=False)
+
+            st.subheader("Payroll summary by month")
+            st.dataframe(summary, use_container_width=True)
+        else:
+            st.subheader(f"Payslip details for {selected_month}")
+            detail_cols = [
+                col for col in ["employee_name", "employee_id", "month", "basic_salary", "allowance", "bik","net_pay"]
+                if col in filtered_payslips.columns
+            ]
+            st.dataframe(filtered_payslips[detail_cols], use_container_width=True)
+
 
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         with st.expander("🗑️ Delete a payslip record (testing / data-entry mistakes only)"):
