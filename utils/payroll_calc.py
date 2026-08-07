@@ -122,7 +122,8 @@ def lookup_socso_and_eis(basic_salary: float, age: int) -> dict:
 
 
 def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_salary: float,
-                       allowance: float, date_of_birth: str, pcb: float = 0.0,  include_skbbk: bool = True,) -> dict:
+                       allowance: float, date_of_birth: str, pcb: float = 0.0,  include_skbbk: bool = True,
+                       bik: float = 0.0,) -> dict:
     """
     Calculate a full payslip for one employee/month and save it to the
     Payslips sheet. This is the single function pages/3_Payslip_Management.py
@@ -165,7 +166,7 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
     skbbk_employee = (socso_eis["skbbk"] if include_skbbk else 0.0)
 
     # 3. Salary calculation
-    gross_salary = round(adjusted_basic_salary + float(allowance), 2)
+    gross_salary = round(adjusted_basic_salary + float(allowance) + float(bik), 2)
     net_pay = round(
         gross_salary
         - epf["employee"]
@@ -184,6 +185,7 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
         "month": month,
         "basic_salary": basic_salary,
         "allowance": allowance,
+        "bik": bik,
         # "working_days": working_days,
         "unpaid_leave_days": unpaid_days,
         "unpaid_leave_deduction": unpaid_leave_deduction,
@@ -211,7 +213,7 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
     return record
 
 def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance: float, date_of_birth: str, 
-                    pcb: float = 0.0, include_skbbk: bool = True,) -> dict:
+                    pcb: float = 0.0, include_skbbk: bool = True, bik: float = 0.0,) -> dict:
     """
     Preview payroll calculation before saving.
 
@@ -235,8 +237,11 @@ def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance
     socso_eis = lookup_socso_and_eis(adjusted_salary, age)         # SOCSO + EIS + SKBBK
     skbbk = (socso_eis["skbbk"] if include_skbbk else 0.0)      # SKBBK
 
-    gross_salary = (adjusted_salary + float(allowance))
-    total_deduction = (epf["employee"] + socso_eis["socso_employee"] + skbbk + socso_eis["eis_employee"] + float(pcb))
+    # Updated 7 Aug, 2026 - Fix gross_salary tuple bug in preview_payslip
+    gross_salary = round(adjusted_salary + float(allowance) + float(bik), 2)
+    total_deduction = (
+        epf["employee"] + socso_eis["socso_employee"] + skbbk + socso_eis["eis_employee"] + float(pcb)
+    )
     net_pay = round(gross_salary - total_deduction, 2)
 
     return {
@@ -245,6 +250,7 @@ def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance
         "unpaid_leave_deduction":unpaid_leave_deduction,
         "basic_salary": basic_salary,
         "allowance": allowance,
+        "bik": float(bik),
         "gross_salary": round(gross_salary, 2),
         "epf_employee": epf["employee"],
         "epf_employer": epf["employer"],
