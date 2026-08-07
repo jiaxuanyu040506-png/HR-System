@@ -18,23 +18,33 @@ me = me.iloc[0]
 initials = "".join([p[0] for p in str(me["name"]).split()[:2]]).upper() or "?"
 
 # ---------- Header ----------
+# Updated 7 Aug, 2026 - Add top padding so full profile name is visible below the page header
+st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
 st.markdown(
     f"""
-    <div style="display:flex; align-items:center; gap:18px; margin-bottom:8px;">
-        <div style="width:64px; height:64px; border-radius:50%; background:#1e4a9e;
-                    color:white; display:flex; align-items:center; justify-content:center;
-                    font-size:1.6rem; font-weight:700; flex-shrink:0;">
-            {initials}
-        </div>
-        <div>
-            <div style="font-size:1.7rem; font-weight:700;">{me['name']}</div>
-            <div style="color:#64748b;">{st.session_state['role'].replace('_', ' ').title()} · {me.get('department', '-')}</div>
+    <div style="margin:0; padding:12px 0 4px 0;">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+            <div style="width:42px; height:42px; border-radius:50%; background:#1e4a9e;
+                        color:white; display:flex; align-items:center; justify-content:center;
+                        font-size:1.3rem; font-weight:700; flex-shrink:0;">
+                {initials}
+            </div>
+            <div style="min-width:0; flex:1;">
+                <div style="font-size:1.25rem; font-weight:700; line-height:1.2; margin:0; padding:0;
+                            overflow-wrap:anywhere; word-break:break-word;">
+                    {me['name']}
+                </div>
+                <div style="font-size:0.95rem; color:#64748b; margin:0; padding:0;
+                            overflow-wrap:anywhere; word-break:break-word;">
+                    {st.session_state['role'].replace('_', ' ').title()} · {me.get('department', '-')}
+                </div>
+            </div>
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
-st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 st.divider()
 
 col_account, col_personal = st.columns(2, gap="large")
