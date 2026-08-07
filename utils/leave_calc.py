@@ -379,6 +379,138 @@ def get_all_requests() -> list[dict]:
     return df.sort_values("submit_date", ascending=False).to_dict("records")
 
 
+# Updated 7 Aug, 2026 - 'Action'
+def _request_matches_month(row, year: int, month: int) -> bool:
+    """
+    Return True if the request's leave period overlaps the given year/month.
+    This is based on the actual leave dates (start_date / end_date),
+    not the submit date.
+    """
+    try:
+        start_date = parse_date(row["start_date"])
+        end_date = parse_date(row["end_date"])
+    except Exception:
+        return False
+
+    month_start = date(year, month, 1)
+    if month == 12:
+        month_end = date(year, 12, 31)
+    else:
+        month_end = date(year, month + 1, 1) - timedelta(days=1)
+
+    return start_date <= month_end and end_date >= month_start
+
+
+# Updated 7 Aug, 2026 - 'Action'
+def get_leave_history(year: int | None = None, month: int | None = None,
+                      employee_id: str | None = None, name: str | None = None,
+                      status: str | None = None) -> list[dict]:
+    """
+    Return leave history with optional filters.
+    - For HR: year/month/name
+    - For employee self-view: employee_id only
+    Uses actual leave period (start/end), not submit date.
+    """
+    df = read_table("LeaveRequests")
+    if df.empty:
+        return []
+
+    filtered = df.copy()
+
+    if employee_id:
+        filtered = filtered[filtered["employee_id"].astype(str) == str(employee_id)]
+
+    if name:
+        name_q = str(name).strip().lower()
+        filtered = filtered[
+            filtered["employee_name"].astype(str).str.lower().str.contains(name_q, na=False)
+        ]
+
+    if status:
+        filtered = filtered[
+            filtered["status"].astype(str).str.lower() == str(status).lower()
+        ]
+
+    if year is not None and month is not None:
+        filtered = filtered[
+            filtered.apply(lambda row: _request_matches_month(row, year, month), axis=1)
+        ]
+    elif year is not None:
+        filtered = filtered[
+            filtered["start_date"].astype(str).str.startswith(str(year))
+            | filtered["end_date"].astype(str).str.startswith(str(year))
+        ]
+
+    if filtered.empty:
+        return []
+
+    return filtered.sort_values("start_date", ascending=False).to_dict("records")
+
+
+# Updated 7 Aug, 2026 - 'Action'
+def get_hr_leave_summary(year: int | None = None, month: int | None = None,
+                         name: str | None = None) -> list[dict]:
+    """
+    Return a simple employee-level summary for HR:
+    Annual / Medical / Unpaid / Other / Total
+    for the selected year/month/name.
+    """
+    history = get_leave_history(year=year, month=month, name=name)
+
+    employees = read_table("Employees")
+    employee_lookup = {}
+    if not employees.empty:
+        employee_lookup = {
+            str(row["employee_id"]): row
+            for _, row in employees.iterrows()
+        }
+
+    summaries: dict[str, dict] = {}
+
+    for row in history:
+        emp_id = str(row.get("employee_id", ""))
+        if not emp_id:
+            continue
+
+        if emp_id not in summaries:
+            employee_row = employee_lookup.get(emp_id, {})
+            summaries[emp_id] = {
+                "employee_id": emp_id,
+                "employee_name": row.get("employee_name") or employee_row.get("name", emp_id),
+                "department": employee_row.get("department", ""),
+                "annual": 0.0,
+                "medical": 0.0,
+                "unpaid": 0.0,
+                "other": 0.0,
+                "total": 0.0,
+            }
+
+        leave_type = row.get("leave_type", "Unknown")
+        days = float(row.get("days", 0) or 0)
+
+        if leave_type == "Annual":
+            summaries[emp_id]["annual"] += days
+        elif leave_type == "Medical":
+            summaries[emp_id]["medical"] += days
+        elif leave_type == "Unpaid":
+            summaries[emp_id]["unpaid"] += days
+        else:
+            summaries[emp_id]["other"] += days
+
+        summaries[emp_id]["total"] += days
+
+    result = []
+    for emp_id, item in summaries.items():
+        item["annual"] = round(item["annual"], 1)
+        item["medical"] = round(item["medical"], 1)
+        item["unpaid"] = round(item["unpaid"], 1)
+        item["other"] = round(item["other"], 1)
+        item["total"] = round(item["total"], 1)
+        result.append(item)
+
+    return sorted(result, key=lambda x: x["employee_name"].lower())
+
+
 def get_calendar_events() -> list[dict]:
     """
     Build a list of events (FullCalendar format) for every Approved leave
