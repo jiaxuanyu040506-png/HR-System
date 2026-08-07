@@ -10,7 +10,7 @@ from utils.attendance import (
     clear_attendance_override, get_attendance_matrix, get_attendance_matrices_for_year,
     get_rest_day_columns, MANUAL_STATUSES, STATUS_CODES,
 )
-from utils.leave_calc import get_leave_balance
+from utils.leave_calc import get_leave_balance, get_leave_history
 from utils.excel_export import attendance_month_to_excel, attendance_year_to_excel
 
 inject_css()
@@ -235,6 +235,55 @@ if view_mode == "Individual Employee":
         st.metric("Unpaid Leave Taken",f"{unpaid_used:.1f} days")
 
     st.markdown("<div style='height:20px'></div>",unsafe_allow_html=True)
+
+    # Updated 7 Aug, 2026 - Added detailed leave history accordion with month filter
+    with st.expander("🗂 Detailed Leave History", expanded=False):
+        history_month = st.selectbox(
+            "Month",
+            list(range(1, 13)),
+            index=datetime.now().month - 1,
+            format_func=lambda m: date(2000, m, 1).strftime("%B"),
+            key="leave_history_month",
+        )
+
+        history_rows = get_leave_history(
+            year=selected_year,
+            month=history_month,
+            employee_id=emp_id,
+        )
+
+        if history_rows:
+            history_df = pd.DataFrame(history_rows)
+            display_cols = ["leave_type", "start_date", "end_date", "days", "status", "reason"]
+            history_df = history_df[[c for c in display_cols if c in history_df.columns]]
+            st.dataframe(history_df, use_container_width=True, hide_index=True)
+
+            # Updated 7 Aug, 2026 - Added leave totals summary below the history table
+            if "days" in history_df.columns and "leave_type" in history_df.columns:
+                history_df["days"] = pd.to_numeric(history_df["days"], errors="coerce").fillna(0)
+
+                summary_df = (
+                    history_df.groupby("leave_type", dropna=False)["days"]
+                    .sum()
+                    .reset_index()
+                    .rename(columns={"days": "days_taken"})
+                )
+                summary_df["days_taken"] = summary_df["days_taken"].round(1)
+
+                total_row = pd.DataFrame([{
+                    "leave_type": "Total",
+                    "days_taken": round(float(summary_df["days_taken"].sum()), 1),
+                }])
+
+                summary_df = pd.concat([summary_df, total_row], ignore_index=True)
+
+                st.caption("Leave totals for selected month")
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+        else:
+            st.info(f"No leave history found for {date(2000, history_month, 1).strftime('%B')} {selected_year}.")
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
     # Attendance Symbols
     with st.expander("📖 Attendance Symbols"):
