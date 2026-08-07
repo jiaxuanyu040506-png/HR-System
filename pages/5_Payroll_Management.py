@@ -51,7 +51,8 @@ if section == "Generate Payslip":
             selected_name = st.selectbox("Employee", list(name_to_id.keys()))
             month = st.text_input("Month (YYYY-MM)", placeholder="2026-07")
             basic_salary = st.number_input("Basic salary (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
-            allowance = st.number_input("Bonus/ Red Packet (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
+            allowance = st.number_input("Bonus (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
+            red_packet = st.number_input("Red Packet (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")  # Updated 7 Aug, 2026 - Separate red packet from allowance
             bik = st.number_input("BIK (RM)", min_value=0.0, step=50.0, value=None, placeholder="0.00")
             skbbk_option = st.radio("SKBBK Contribution", ["Yes", "No"], horizontal=True)
             pcb = st.number_input("PCB (RM)", min_value=0.0, step=1.0, value=None, placeholder="0.00")
@@ -66,7 +67,7 @@ if section == "Generate Payslip":
             try:
                 preview = preview_payslip(employee_id=emp_id,month=month,
                 basic_salary=basic_salary,allowance=allowance or 0.0, bik=bik or 0.0,
-                date_of_birth=employee["date_of_birth"], pcb=pcb or 0.0,
+                red_packet=red_packet or 0.0, date_of_birth=employee["date_of_birth"], pcb=pcb or 0.0,
                 include_skbbk=(skbbk_option=="Yes")
                 )
 
@@ -77,6 +78,7 @@ if section == "Generate Payslip":
                 st.session_state["payslip_month"] = month
                 st.session_state["payslip_basic"] = basic_salary or 0.0
                 st.session_state["payslip_allowance"] = allowance or 0.0
+                st.session_state["payslip_red_packet"] = red_packet or 0.0  # Updated 7 Aug, 2026 - Store red packet separately
                 st.session_state["payslip_bik"] = bik or 0.0
                 st.session_state["payslip_pcb"] = pcb or 0.0
                 st.session_state["payslip_skbbk"] = (
@@ -104,10 +106,12 @@ if section == "Generate Payslip":
             c6.metric("EIS", f"RM {preview['eis_employee']:.2f}")
             c7.metric("BIK", f"RM {preview.get('bik', st.session_state.get('payslip_bik', 0.0)):.2f}")
 
-            c8, c9, c10 = st.columns(3)
+            c8, c9, c10, c11 = st.columns(4)
             c8.metric("SKBBK", f"RM {preview['skbbk']:.2f}")
             c9.metric("PCB", f"RM {preview['pcb']:.2f}")
-            c10.metric("Allowance", f"RM {preview['allowance']:.2f}")
+            c10.metric("Bonus", f"RM {preview['allowance']:.2f}")
+            c11.metric("Red Packet", f"RM {preview.get('red_packet', 0.0):.2f}")  # Updated 7 Aug, 2026 - Show red packet separately
+
 
             st.success(f"Net Pay: RM {preview['net_pay']:.2f}")
             st.divider()
@@ -123,6 +127,7 @@ if section == "Generate Payslip":
                         employee["date_of_birth"],
                         st.session_state["payslip_pcb"],
                         include_skbbk=st.session_state["payslip_skbbk"],
+                        red_packet=st.session_state["payslip_red_packet"],  # Updated 7 Aug, 2026 - Pass red packet separately
                         bik=st.session_state["payslip_bik"],
                     )
 
