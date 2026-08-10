@@ -75,6 +75,7 @@ with tab_add:
         col5, col6 = st.columns(2)
         income_tax_no = col5.text_input("Income Tax No.")
         epf_no = col6.text_input("EPF No.")
+        ic_no = st.text_input("I/C No.")
         # admin_email = st.text_input("Admin/Manager Email (leave blank if none)")
         bank_account = st.text_input("Bank Account")
         initial_password = st.text_input("Initial Password", value="Welcome123")
@@ -99,6 +100,7 @@ with tab_add:
                 "join_date": str(join_date),
                 "income_tax_no": income_tax_no,
                 "epf_no": epf_no,
+                "ic_no": ic_no,
                 "status": "Active",
                 # "admin_email": admin_email,
                 "bank_account": bank_account,
@@ -160,6 +162,7 @@ with tab_edit:
             col5, col6 = st.columns(2)
             edit_income_tax_no = col5.text_input("Income Tax No.", value=str(employee.get("income_tax_no", "")))
             edit_epf_no = col6.text_input("EPF No.", value=str(employee.get("epf_no", "")))
+            edit_ic_no = st.text_input("I/C No.", value=str(employee.get("ic_no", "")))
             # edit_admin = st.text_input("Admin/Manager Email", value=str(employee.get("admin_email", "")))
             edit_bank = st.text_input("Bank Account", value=str(employee.get("bank_account", "")))
             save = st.form_submit_button("Save Changes", use_container_width=True)
@@ -179,6 +182,7 @@ with tab_edit:
                     "role": edit_role,
                     "income_tax_no": edit_income_tax_no,
                     "epf_no": edit_epf_no,
+                    "ic_no": edit_ic_no,
                     # "admin_email": edit_admin,
                     "bank_account": edit_bank,
                 },
