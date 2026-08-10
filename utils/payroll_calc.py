@@ -50,7 +50,12 @@ def get_age(date_of_birth: str) -> int:
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
-def lookup_epf(basic_salary: float, age: int) -> dict:
+SPECIAL_EPF_EMPLOYER_IDS = {"LH-LHY", "LH-QKC"}
+
+def _epf_employer_column(employee_id: str) -> str:
+    return "lhy_employer_amount" if employee_id in SPECIAL_EPF_EMPLOYER_IDS else "employer_amount"
+
+def lookup_epf(basic_salary: float, age: int, employer_column: str = "employer_amount") -> dict:
     """
     Look up EPF employer/employee contribution amounts for a given
     basic salary, from the EPF tab (age < 60) or EPF_60 tab (age >= 60).
@@ -68,7 +73,7 @@ def lookup_epf(basic_salary: float, age: int) -> dict:
         raise ValueError(f"Salary RM{basic_salary} is outside the {tab_name} rate table range.")
     row = match.iloc[0]
     return {
-        "employer": float(row["employer_amount"]),
+        "employer": float(row[employer_column]),
         "employee": float(row["employee_amount"]),
     }
 
@@ -119,6 +124,7 @@ def lookup_socso_and_eis(basic_salary: float, age: int) -> dict:
         "socso_employer": socso_employer,
         "skbbk": skbbk,
         "eis_employee": eis_employee,
+        "eis_employer": float(row["eis_employer"]),
     }
 
 
@@ -168,7 +174,11 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
         2,
     )
 
-    epf = lookup_epf(epf_base_salary, age)
+    epf = lookup_epf(
+        epf_base_salary,
+        age,
+        employer_column=_epf_employer_column(employee_id),
+    )
     socso_eis = lookup_socso_and_eis(socso_base_salary, age)
     skbbk_employee = (socso_eis["skbbk"] if include_skbbk else 0.0)
 
@@ -201,6 +211,7 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
         "socso_employee": socso_eis["socso_employee"],
         "socso_employer": socso_eis["socso_employer"],
         "eis_employee": socso_eis["eis_employee"],
+        "eis_employer": socso_eis["eis_employer"],
         "skbbk": skbbk_employee,
         "skbbk_status": "Yes" if include_skbbk else "No",
         "pcb": pcb,
@@ -241,7 +252,11 @@ def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance
         2,
     )
 
-    epf = lookup_epf(epf_base_salary, age)
+    epf = lookup_epf(
+        epf_base_salary,
+        age,
+        employer_column=_epf_employer_column(employee_id),
+    )
     socso_eis = lookup_socso_and_eis(socso_base_salary, age)
     skbbk = (socso_eis["skbbk"] if include_skbbk else 0.0)
 
@@ -268,6 +283,7 @@ def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance
         "socso_employee": socso_eis["socso_employee"],
         "socso_employer": socso_eis["socso_employer"],
         "eis_employee": socso_eis["eis_employee"],
+        "eis_employer": socso_eis["eis_employer"],
         "skbbk": skbbk,
         "pcb": float(pcb),
         "total_deduction": round(total_deduction, 2),
