@@ -14,6 +14,8 @@ from utils.auth import require_role
 from utils.sheets_client import read_table
 from utils.date_utils import parse_date
 from utils.leave_rules import get_sick_leave_entitlement
+from utils.leave_attachment import get_leave_attachment
+from utils.supabase_client import download_file
 
 try:
     from streamlit_calendar import calendar
@@ -188,45 +190,6 @@ if section == "Record Leave":
 
         col_left, col_right = st.columns(2)
 
-        # with col_left:
-        #     st.markdown("##### 每位员工请假天数（按月）")
-        #     if employee_monthly:
-        #         emp_month_df = pd.DataFrame(employee_monthly)
-        #         if alt is not None:
-        #             stacked = alt.Chart(emp_month_df).mark_bar().encode(
-        #                 x=alt.X("employee_name:N", title="Employee", sort=None),
-        #                 y=alt.Y("days:Q", title="Days on leave"),
-        #                 color=alt.Color("month:N", title="Month"),
-        #                 tooltip=["employee_name", "month", "days"],
-        #             )
-        #             st.altair_chart(stacked, use_container_width=True)
-        #         else:
-        #             pivot = emp_month_df.pivot_table(
-        #                 index="employee_name", columns="month", values="days", aggfunc="sum", fill_value=0
-        #             )
-        #             st.bar_chart(pivot)
-        #     else:
-        #         st.info("目前还没有已批准的请假记录。")
-
-        # with col_right:
-        #     st.markdown("##### 每月请假人数")
-        #     if month_counts:
-        #         donut_df = pd.DataFrame({
-        #             "month": list(month_counts.keys()),
-        #             "employees_on_leave": list(month_counts.values()),
-        #         })
-        #         if alt is not None:
-        #             donut = alt.Chart(donut_df).mark_arc(innerRadius=60).encode(
-        #                 theta=alt.Theta(field="employees_on_leave", type="quantitative"),
-        #                 color=alt.Color(field="month", type="nominal", legend=alt.Legend(title="Month")),
-        #                 tooltip=["month", "employees_on_leave"],
-        #             )
-        #             st.altair_chart(donut, use_container_width=True)
-        #         else:
-        #             st.bar_chart(donut_df.set_index("month")["employees_on_leave"])
-        #     else:
-        #         st.info("目前还没有已批准的请假记录。")
-
         with col_left:
             st.markdown("##### 每位员工请假天数")
             if employee_by_type:
@@ -378,39 +341,381 @@ elif section == "Leave Calendar":
 
 # ---------- Leave Approval ----------
 elif section == "Leave Approval":
+
+    # --------------------------------------------------------
+    # Get pending requests
+    # --------------------------------------------------------
+
     if role == "hr_admin":
+
         pending = get_all_pending_requests()
+
     else:
-        pending = get_pending_requests(st.session_state["email"])
+
+        pending = get_pending_requests(
+            st.session_state["email"]
+        )
+
+
+    # --------------------------------------------------------
+    # No pending requests
+    # --------------------------------------------------------
 
     if not pending:
-        st.caption("No pending requests.")
+
+        st.caption(
+            "No pending requests."
+        )
+
+
+    # --------------------------------------------------------
+    # Display pending requests
+    # --------------------------------------------------------
+
     for req in pending:
+
+        request_id = str(
+            req["request_id"]
+        )
+
+        attachments = get_leave_attachment(
+            request_id
+        )
+
+
+        # ====================================================
+        # Leave Approval Card
+        # ====================================================
+
         st.markdown(
             "<div class='leave-approval-card'>"
             f"<h3>{req.get('employee_name', req['employee_id'])}</h3>"
-            f"<div class='leave-approval-note'>{req.get('reason', 'No reason provided.')}</div>"
+            f"<div class='leave-approval-note'>"
+            f"{req.get('reason', 'No reason provided.')}"
+            "</div>"
             "<div class='leave-approval-meta'>"
-            f"<div><strong>Leave type</strong>{req['leave_type']}</div>"
-            f"<div><strong>Start</strong>{req['start_date']}</div>"
-            f"<div><strong>End</strong>{req['end_date']}</div>"
-            f"<div><strong>Days</strong>{req['days']} day(s)</div>"
-            f"<div><strong>Session</strong>{req.get('session', 'Full Day')}</div>"
-            f"<div><strong>Status</strong>{req.get('status', 'Pending')}</div>"
-            f"<div><strong>Requested on</strong>{req.get('submit_date', 'Unknown')}</div>"
-            f"<div><strong>Employee ID</strong>{req['employee_id']}</div>"
+
+            f"<div><strong>Leave type</strong>"
+            f"{req['leave_type']}</div>"
+
+            f"<div><strong>Start</strong>"
+            f"{req['start_date']}</div>"
+
+            f"<div><strong>End</strong>"
+            f"{req['end_date']}</div>"
+
+            f"<div><strong>Days</strong>"
+            f"{req['days']} day(s)</div>"
+
+            f"<div><strong>Session</strong>"
+            f"{req.get('session', 'Full Day')}</div>"
+
+            f"<div><strong>Status</strong>"
+            f"{req.get('status', 'Pending')}</div>"
+
+            f"<div><strong>Requested on</strong>"
+            f"{req.get('submit_date', 'Unknown')}</div>"
+
+            f"<div><strong>Employee ID</strong>"
+            f"{req['employee_id']}</div>"
+
+            +
+
+            (
+                f"<div><strong>Attachment</strong>"
+                f"{len(attachments)} file(s)</div>"
+                if attachments
+                else
+                "<div><strong>Attachment</strong>"
+                "None</div>"
+            )
+
+            +
+
             "</div>"
             "</div>",
             unsafe_allow_html=True,
         )
-        cols = st.columns([1, 1])
+
+
+        # ====================================================
+        # Attachments
+        # ====================================================
+
+        if attachments:
+
+            st.markdown(
+                "##### 📎 Attachments"
+            )
+
+            for index, file in enumerate(
+                attachments
+            ):
+
+                file_name = file.get(
+                    "file_name",
+                    "Attachment"
+                )
+
+                file_path = file.get(
+                    "file_path"
+                )
+
+                mime_type = file.get(
+                    "mime_type",
+                    ""
+                ).strip().lower()
+
+                uploaded_date = file.get(
+                    "uploaded_date",
+                    ""
+                )
+
+
+                # ------------------------------------------------
+                # Fallback MIME type
+                # ------------------------------------------------
+
+                if not mime_type:
+
+                    extension = (
+                        file_name
+                        .lower()
+                        .split(".")[-1]
+                    )
+
+                    mime_map = {
+                        "pdf": "application/pdf",
+                        "jpg": "image/jpeg",
+                        "jpeg": "image/jpeg",
+                        "png": "image/png",
+                    }
+
+                    mime_type = mime_map.get(
+                        extension,
+                        "application/octet-stream"
+                    )
+
+
+                # ------------------------------------------------
+                # Missing file path
+                # ------------------------------------------------
+
+                if not file_path:
+
+                    st.error(
+                        f"{file_name}: "
+                        "File path unavailable."
+                    )
+
+                    continue
+
+
+                # =================================================
+                # Attachment information
+                # =================================================
+
+                col1, col2, col3 = st.columns(
+                    [4, 1, 1]
+                )
+
+
+                with col1:
+
+                    if mime_type == "application/pdf":
+
+                        icon = "📄"
+
+                    elif mime_type.startswith(
+                        "image/"
+                    ):
+
+                        icon = "🖼️"
+
+                    else:
+
+                        icon = "📎"
+
+
+                    st.write(
+                        f"{icon} **{file_name}**"
+                    )
+
+                    if uploaded_date:
+
+                        st.caption(
+                            f"Uploaded: "
+                            f"{uploaded_date}"
+                        )
+
+
+                # =================================================
+                # Load file from Supabase
+                # =================================================
+
+                try:
+
+                    file_bytes = download_file(
+                        file_path
+                    )
+
+
+                    # =================================================
+                    # Preview button
+                    # =================================================
+
+                    with col2:
+
+                        preview_key = (
+                            f"preview_mc_"
+                            f"{request_id}_"
+                            f"{index}"
+                        )
+
+                        preview = st.toggle(
+                            "Preview",
+                            key=preview_key
+                        )
+
+
+                    # =================================================
+                    # Download button
+                    # =================================================
+
+                    with col3:
+
+                        st.download_button(
+                            "Download",
+                            data=file_bytes,
+                            file_name=file_name,
+                            mime=mime_type,
+                            key=(
+                                f"download_mc_"
+                                f"{request_id}_"
+                                f"{index}"
+                            ),
+                            use_container_width=True,
+                        )
+
+
+                    # =================================================
+                    # Preview
+                    # =================================================
+
+                    if preview:
+
+                        # -----------------------------------------
+                        # PDF
+                        # -----------------------------------------
+
+                        if mime_type == "application/pdf":
+
+                            import base64
+
+                            base64_file = (
+                                base64.b64encode(
+                                    file_bytes
+                                ).decode("utf-8")
+                            )
+
+                            pdf_display = f"""
+                            <iframe
+                                src="data:application/pdf;base64,{base64_file}"
+                                width="100%"
+                                height="600"
+                                style="
+                                    border: 1px solid #ddd;
+                                    border-radius: 8px;
+                                "
+                                type="application/pdf">
+                            </iframe>
+                            """
+
+                            st.markdown(
+                                pdf_display,
+                                unsafe_allow_html=True,
+                            )
+
+
+                        # -----------------------------------------
+                        # JPG / JPEG / PNG
+                        # -----------------------------------------
+
+                        elif mime_type in [
+                            "image/jpeg",
+                            "image/png",
+                        ]:
+
+                            st.image(
+                                file_bytes,
+                                use_container_width=True,
+                            )
+
+
+                        # -----------------------------------------
+                        # Unsupported file type
+                        # -----------------------------------------
+
+                        else:
+
+                            st.warning(
+                                "Preview is not "
+                                "available for this "
+                                "file type. "
+                                "Please download the file."
+                            )
+
+
+                except Exception as e:
+
+                    st.error(
+                        f"Unable to load "
+                        f"{file_name}."
+                    )
+
+                    st.caption(
+                        f"Error: {e}"
+                    )
+
+
+        # ====================================================
+        # Approve / Reject
+        # ====================================================
+
+        cols = st.columns(
+            [1, 1]
+        )
+
+
         with cols[0]:
-            if st.button("Approve", key=f"appr_{req['request_id']}", use_container_width=True):
-                approve_request(req["request_id"], st.session_state["email"])
+
+            if st.button(
+                "Approve",
+                key=f"appr_{request_id}",
+                use_container_width=True,
+            ):
+
+                approve_request(
+                    request_id,
+                    st.session_state["email"],
+                )
+
                 st.rerun()
+
+
         with cols[1]:
-            if st.button("Reject", key=f"rej_{req['request_id']}", use_container_width=True):
-                reject_request(req["request_id"], st.session_state["email"])
+
+            if st.button(
+                "Reject",
+                key=f"rej_{request_id}",
+                use_container_width=True,
+            ):
+
+                reject_request(
+                    request_id,
+                    st.session_state["email"],
+                )
+
                 st.rerun()
 
 # ---------- Employee Leave History ----------

@@ -170,7 +170,6 @@ with tab_edit:
         if save:
             update_row(
                 "Employees",
-                {"employee_id": employee["employee_id"]},
                 {
                     "name": edit_name,
                     "email": edit_email,

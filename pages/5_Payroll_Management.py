@@ -5,7 +5,7 @@ from utils.auth import require_role
 from utils.sheets_client import read_table, delete_row
 from utils.payroll_calc import calculate_payslip, preview_payslip
 from utils.pdf_generator import generate_payslip_pdf_bytes
-from utils.ea_forms import upload_ea_form, get_all_ea_forms
+from utils.ea_forms import upload_ea_form, get_all_ea_forms, download_ea_form_bytes
 
 inject_css()
 require_role(["hr_admin"])
@@ -219,39 +219,364 @@ elif section == "Payroll History":
 
 # ---------- Upload EA Form ----------
 else:
-    st.caption(
-        "Upload each employee's annual EA Form (income statement) here. It will appear "
-        "under their 'My Payslips' page for them to download. Uploading again for the "
-        "same employee + year replaces the previous file."
-    )
-    if employees.empty:
-        st.caption("No employees found yet.")
-    else:
-        name_to_id = dict(zip(employees["name"], employees["employee_id"]))
-        with st.form("ea_form_upload"):
-            selected_name = st.selectbox("Employee", list(name_to_id.keys()), key="ea_employee")
-            year = st.text_input("Year", value=str(date.today().year - 1), placeholder="2025")
-            pdf_file = st.file_uploader("EA Form PDF", type=["pdf"])
-            submitted_ea = st.form_submit_button("Upload EA Form")
 
-        if submitted_ea:
-            if pdf_file is None:
-                st.error("Please choose a PDF file first.")
-            elif not year.strip():
-                st.error("Please enter the year this EA Form is for.")
-            else:
-                emp_id = name_to_id[selected_name]
-                upload_ea_form(emp_id, selected_name, year.strip(), pdf_file.read())
-                st.success(f"EA Form for {selected_name} ({year}) uploaded — they can now download it under My Payslips.")
-                st.rerun()
+    st.markdown("#### Upload EA Form")
+
+    st.caption(
+        "Upload each employee's annual EA Form (income statement) here. "
+        "It will appear under their 'My EA Forms' page for them to download. "
+        "Uploading again for the same employee + year replaces the previous file."
+    )
+
+    if employees.empty:
+
+        st.caption("No employees found yet.")
+
+    else:
+
+        name_to_id = dict(
+            zip(
+                employees["name"],
+                employees["employee_id"]
+            )
+        )
+
+        with st.form("ea_form_upload"):
+
+            selected_name = st.selectbox(
+                "Employee",
+                list(name_to_id.keys()),
+                key="ea_employee"
+            )
+
+            year = st.text_input(
+                "Year",
+                value=str(date.today().year - 1),
+                placeholder="2025",
+                key="ea_year"
+            )
+
+            pdf_file = st.file_uploader(
+                "EA Form PDF",
+                type=["pdf"],
+                key="ea_pdf_upload"
+            )
+
+            submitted_ea = st.form_submit_button(
+                "Upload EA Form"
+            )
+
+            if submitted_ea:
+
+                # -------------------------
+                # Validation
+                # -------------------------
+
+                if pdf_file is None:
+
+                    st.error(
+                        "Please choose a PDF file first."
+                    )
+
+                elif not year.strip():
+
+                    st.error(
+                        "Please enter the year this EA Form is for."
+                    )
+
+                elif not year.strip().isdigit():
+
+                    st.error(
+                        "Year must contain numbers only."
+                    )
+
+                elif len(year.strip()) != 4:
+
+                    st.error(
+                        "Please enter a valid 4-digit year."
+                    )
+
+                else:
+
+                    emp_id = name_to_id[selected_name]
+
+                    try:
+
+                        upload_ea_form(
+                            employee_id=emp_id,
+                            employee_name=selected_name,
+                            year=year.strip(),
+                            file_bytes=pdf_file.getvalue(),
+                        )
+
+                        st.success(
+                            f"EA Form for {selected_name} "
+                            f"({year.strip()}) uploaded successfully. "
+                            "They can now download it under My EA Forms."
+                        )
+
+                        st.rerun()
+
+                    except Exception as e:
+
+                        st.error(
+                            f"Failed to upload EA Form: {e}"
+                        )
+
+
+    # ============================================================
+    # Part 2: Uploaded EA Forms
+    # ============================================================
 
     st.divider()
+
     st.markdown("#### Uploaded EA Forms")
+
     all_forms = get_all_ea_forms()
+
+
     if not all_forms:
-        st.caption("No EA Forms uploaded yet.")
-    else:
-        st.dataframe(
-            [{"Employee": f["employee_name"], "Year": f["year"], "Uploaded": f["uploaded_date"]} for f in all_forms],
-            use_container_width=True,
+
+        st.caption(
+            "No EA Forms uploaded yet."
         )
+
+    else:
+
+        # --------------------------------------------------------
+        # Year Filter
+        # --------------------------------------------------------
+
+        available_years = sorted(
+            {
+                str(form["year"])
+                for form in all_forms
+                if form.get("year")
+            },
+            reverse=True
+        )
+
+        selected_year = st.selectbox(
+            "Filter by Year",
+            options=["All Years"] + available_years,
+            key="ea_year_filter"
+        )
+
+
+        # --------------------------------------------------------
+        # Apply Filter
+        # --------------------------------------------------------
+
+        if selected_year == "All Years":
+
+            filtered_forms = all_forms
+
+        else:
+
+            filtered_forms = [
+                form
+                for form in all_forms
+                if str(form["year"]) == selected_year
+            ]
+
+
+        st.caption(
+            f"Showing {len(filtered_forms)} EA Form(s)"
+        )
+
+
+        # --------------------------------------------------------
+        # Display EA Forms
+        # --------------------------------------------------------
+
+        if not filtered_forms:
+
+            st.info(
+                f"No EA Forms found for {selected_year}."
+            )
+
+        else:
+
+            for form in filtered_forms:
+
+                employee_id = str(
+                    form["employee_id"]
+                )
+
+                employee_name = str(
+                    form["employee_name"]
+                )
+
+                year = str(
+                    form["year"]
+                )
+
+                uploaded_date = str(
+                    form.get("uploaded_date", "-")
+                )
+
+                storage_path = form.get(
+                    "storage_path"
+                )
+
+
+                # ------------------------------------------------
+                # One expander per employee/year
+                # ------------------------------------------------
+
+                with st.expander(
+                    f"{employee_name} "
+                    f"({employee_id}) — EA Form {year}"
+                ):
+
+                    # -------------------------
+                    # Information
+                    # -------------------------
+
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+
+                        st.caption("Employee")
+
+                        st.write(
+                            employee_name
+                        )
+
+                    with col2:
+
+                        st.caption("Year")
+
+                        st.write(
+                            year
+                        )
+
+                    with col3:
+
+                        st.caption("Uploaded")
+
+                        st.write(
+                            uploaded_date
+                        )
+
+
+                    st.divider()
+
+
+                    # -------------------------
+                    # Storage path
+                    # -------------------------
+
+                    if not storage_path:
+
+                        st.error(
+                            "Storage path is missing for this EA Form."
+                        )
+
+                        continue
+
+
+                    # -------------------------
+                    # Load PDF
+                    # -------------------------
+
+                    try:
+
+                        pdf_bytes = download_ea_form_bytes(
+                            storage_path
+                        )
+
+                    except Exception as e:
+
+                        st.error(
+                            "Unable to load this EA Form."
+                        )
+
+                        st.caption(
+                            f"Error: {e}"
+                        )
+
+                        continue
+
+
+                    # -------------------------
+                    # Preview / Download
+                    # -------------------------
+
+                    col_preview, col_download = st.columns(
+                        [1, 1]
+                    )
+
+
+                    # =========================
+                    # Preview
+                    # =========================
+
+                    with col_preview:
+
+                        preview_key = (
+                            f"preview_ea_"
+                            f"{employee_id}_"
+                            f"{year}"
+                        )
+
+                        preview = st.toggle(
+                            "Preview PDF",
+                            key=preview_key
+                        )
+
+
+                    # =========================
+                    # Download
+                    # =========================
+
+                    with col_download:
+
+                        st.download_button(
+                            label="Download EA Form",
+                            data=pdf_bytes,
+                            file_name=(
+                                f"EA_{year}_"
+                                f"{employee_id}.pdf"
+                            ),
+                            mime="application/pdf",
+                            key=(
+                                f"download_ea_"
+                                f"{employee_id}_"
+                                f"{year}"
+                            ),
+                            use_container_width=True,
+                        )
+
+
+                    # -------------------------
+                    # PDF Preview
+                    # -------------------------
+
+                    if preview:
+
+                        st.markdown(
+                            "##### EA Form Preview"
+                        )
+
+                        import base64
+
+                        base64_pdf = base64.b64encode(
+                            pdf_bytes
+                        ).decode("utf-8")
+
+                        pdf_display = f"""
+                        <iframe
+                            src="data:application/pdf;base64,{base64_pdf}"
+                            width="100%"
+                            height="700"
+                            style="border: 1px solid #ddd;
+                                border-radius: 8px;"
+                            type="application/pdf">
+                        </iframe>
+                        """
+
+                        st.markdown(
+                            pdf_display,
+                            unsafe_allow_html=True
+                        )

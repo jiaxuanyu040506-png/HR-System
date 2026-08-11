@@ -54,20 +54,85 @@ else:
 
 st.divider()
 st.subheader("EA Form")
-my_ea_forms = get_ea_forms_for_employee(st.session_state["employee_id"])
+
+# Get EA Forms belonging to the logged-in employee
+my_ea_forms = get_ea_forms_for_employee(
+    st.session_state["employee_id"]
+)
+
 if not my_ea_forms:
-    st.caption("No EA Form uploaded by HR yet.")
+    st.caption(
+        "No EA Form uploaded by HR yet."
+    )
 else:
     for form in my_ea_forms:
-        col1, col2 = st.columns([3, 1])
-        col1.write(f"**EA Form {form['year']}** — uploaded {form.get('uploaded_date', '')}")
-        try:
-            pdf_bytes = download_ea_form_bytes(form["drive_file_id"])
-            col2.download_button(
-                "Download", pdf_bytes,
-                file_name=f"EA_{form['year']}_{my_employee['name']}.pdf",
-                mime="application/pdf",
-                key=f"ea_dl_{form['year']}",
+
+        year = str(form["year"])
+        uploaded_date = form.get(
+            "uploaded_date",
+            ""
+        )
+
+        storage_path = form.get(
+            "storage_path"
+        )
+
+        col1, col2 = st.columns(
+            [3, 1]
+        )
+
+        # --------------------------------
+        # EA Form information
+        # --------------------------------
+
+        with col1:
+
+            st.write(
+                f"**EA Form {year}** "
+                f"— uploaded {uploaded_date}"
             )
-        except Exception:
-            col2.error("Couldn't fetch file.")
+
+        # --------------------------------
+        # Download
+        # --------------------------------
+
+        with col2:
+
+            if not storage_path:
+
+                st.error(
+                    "File path unavailable."
+                )
+
+            else:
+
+                try:
+
+                    pdf_bytes = (
+                        download_ea_form_bytes(
+                            storage_path
+                        )
+                    )
+
+                    st.download_button(
+                        "Download",
+                        data=pdf_bytes,
+                        file_name=(
+                            f"EA_{year}_"
+                            f"{my_employee['name']}.pdf"
+                        ),
+                        mime="application/pdf",
+                        key=(
+                            f"ea_dl_"
+                            f"{st.session_state['employee_id']}_"
+                            f"{year}"
+                        ),
+                        use_container_width=True,
+                    )
+
+                except Exception:
+
+                    st.error(
+                        "Couldn't fetch file."
+                    )
+

@@ -7,6 +7,8 @@ from utils.leave_calc import (
     submit_leave_request, get_leave_balance, get_my_requests, init_year_balance,
     get_calendar_events, LEAVE_TYPES,
 )
+from utils.leave_attachment import upload_leave_attachment
+from utils.sheets_client import read_table
 
 inject_css()
 require_login()
@@ -14,6 +16,14 @@ render_nav_sidebar(st.session_state["role"])
 st.title("My Leave")
 
 employee_id = st.session_state["employee_id"]
+employees = read_table("Employees")
+employee_df = employees[employees["employee_id"] == employee_id]
+if employee_df.empty:
+    st.error("Employee record not found.")
+    st.stop()
+employee = employee_df.iloc[0]
+employee_name = employee["name"]
+
 year = date.today().year
 
 balance = get_leave_balance(employee_id, year)
@@ -54,16 +64,14 @@ if section == "Apply Leave":
                 st.caption("Half Day applies to a single date — set Start Date = End Date.")
             reason = st.text_area("Reason")
             attachments = st.file_uploader(
-                "Attachment (Optional)", accept_multiple_files=True, type=["jpg", "png", "pdf"]
+                "Upload MC / Supporting Document",
+                type=["pdf", "jpg", "jpeg", "png"],
+                help="Accepted formats: PDF, JPG, JPEG, PNG",
             )
             submitted = st.form_submit_button("Apply Leave")
 
         if attachments:
-            st.caption(
-                f"{len(attachments)} file(s) selected. Note: attachments aren't saved anywhere "
-                "yet — this needs a file-storage backend (e.g. Google Drive via the service "
-                "account) to actually keep them. Let me know if you want that built."
-            )
+            st.caption(f"{len(attachments)} file(s) selected.")
 
         if submitted:
             if end < start:
@@ -72,9 +80,10 @@ if section == "Apply Leave":
                 st.error("For Half Day, Start Date and End Date must be the same.")
             else:
                 try:
-                    request_id, days = submit_leave_request(
-                        employee_id, leave_type, start, end, reason, session
-                    )
+                    request_id, days = submit_leave_request(employee_id, leave_type, start, end, reason, session)
+                    if attachments:
+                        for file in attachments:
+                            upload_leave_attachment(request_id, employee_id, employee_name, file)
                     st.session_state["leave_submit_message"] = (
                         f"✅ Request {request_id} submitted successfully for {days} day(s)."
                     )
@@ -85,7 +94,7 @@ if section == "Apply Leave":
     st.markdown(
         "<div style='background:#eaf3ff; border:1px solid #bcdcff; border-radius:8px; "
         "padding:10px 14px; margin-top:8px; color:#1e4a9e;'>"
-        "📌 Note: Please apply leave at least 3 day in advance. For urgent leave, please inform Ms Leong."
+        "📌 Note: Please apply leave at least one week in advance. For urgent leave, please inform BOSS."
         "</div>",
         unsafe_allow_html=True,
     )
