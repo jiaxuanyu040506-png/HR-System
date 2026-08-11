@@ -65,10 +65,17 @@ if section == "Generate Payslip":
             employee = employees[employees["employee_id"] == emp_id].iloc[0].to_dict()
 
             try:
-                preview = preview_payslip(employee_id=emp_id,month=month,
-                basic_salary=basic_salary,allowance=allowance or 0.0, bik=bik or 0.0,
-                red_packet=red_packet or 0.0, date_of_birth=employee["date_of_birth"], pcb=pcb or 0.0,
-                include_skbbk=(skbbk_option=="Yes")
+                preview = preview_payslip(
+                    employee_id=emp_id,
+                    month=month,
+                    basic_salary=basic_salary,
+                    allowance=allowance or 0.0,
+                    bik=bik or 0.0,
+                    red_packet=red_packet or 0.0,
+                    date_of_birth=employee["date_of_birth"],
+                    pcb=pcb or 0.0,
+                    include_skbbk=(skbbk_option=="Yes"),
+                    join_date=employee.get("join_date"),
                 )
 
                 # store preview in session
@@ -120,7 +127,9 @@ if section == "Generate Payslip":
             if st.button("Generate Payslip", type="primary"):
                 try:
                     employee = st.session_state["payslip_employee"]
-                    payslip = calculate_payslip(st.session_state["payslip_emp_id"], employee["name"],
+                    payslip = calculate_payslip(
+                        st.session_state["payslip_emp_id"],
+                        employee["name"],
                         st.session_state["payslip_month"],
                         st.session_state["payslip_basic"],
                         st.session_state["payslip_allowance"],
@@ -129,6 +138,7 @@ if section == "Generate Payslip":
                         include_skbbk=st.session_state["payslip_skbbk"],
                         red_packet=st.session_state["payslip_red_packet"],  # Updated 7 Aug, 2026 - Pass red packet separately
                         bik=st.session_state["payslip_bik"],
+                        join_date=employee.get("join_date"),
                     )
 
                     if "bik" not in payslip:

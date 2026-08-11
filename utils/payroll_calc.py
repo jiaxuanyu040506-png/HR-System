@@ -150,7 +150,7 @@ def round_to_nearest_five_cents(amount: float) -> float:
 def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_salary: float,
                        allowance: float, date_of_birth: str, pcb: float = 0.0,
                        include_skbbk: bool = True, red_packet: float = 0.0,
-                       bik: float = 0.0) -> dict:
+                       bik: float = 0.0, join_date: str | None = None) -> dict:
     """
     Calculate a full payslip for one employee/month and save it to the
     Payslips sheet.
@@ -163,10 +163,13 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
     if not _skip_unpaid_leave_deduction(employee_id):
         unpaid_days = get_unpaid_leave_days(employee_id, month)
 
-    daily_rate = float(basic_salary) / days_in_month
-    unpaid_leave_deduction = 0.0 if _skip_unpaid_leave_deduction(employee_id) else round(daily_rate * unpaid_days, 2)
+    unpaid_leave_deduction = 0.0 if _skip_unpaid_leave_deduction(employee_id) else round((float(basic_salary) / days_in_month) * unpaid_days, 2)
 
-    adjusted_basic_salary = round(float(basic_salary) - unpaid_leave_deduction, 2)
+    pre_join_days, pre_join_deduction = get_pre_join_salary_deduction(basic_salary, month, join_date)
+    total_unpaid_days = unpaid_days + pre_join_days
+    total_unpaid_deduction = round(unpaid_leave_deduction + pre_join_deduction, 2)
+
+    adjusted_basic_salary = round(float(basic_salary) - total_unpaid_deduction, 2)
 
     # Updated 7 Aug, 2026 - allowance is the bonus-equivalent amount for EPF
     epf_base_salary = round(adjusted_basic_salary + float(allowance), 2)
@@ -208,8 +211,10 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
         "allowance": allowance,
         "red_packet": red_packet,
         "bik": bik,
-        "unpaid_leave_days": unpaid_days,
-        "unpaid_leave_deduction": unpaid_leave_deduction,
+        "unpaid_leave_days": total_unpaid_days,
+        "unpaid_leave_deduction": total_unpaid_deduction,
+        "pre_join_days": pre_join_days,
+        "pre_join_deduction": pre_join_deduction,
         "gross_salary": gross_salary,
         "epf_employee": epf["employee"],
         "epf_employer": epf["employer"],
@@ -233,7 +238,7 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
 
 def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance: float,
                     date_of_birth: str, pcb: float = 0.0, include_skbbk: bool = True,
-                    red_packet: float = 0.0, bik: float = 0.0) -> dict:
+                    red_packet: float = 0.0, bik: float = 0.0, join_date: str | None = None) -> dict:
     """
     Preview payroll calculation before saving.
     """
@@ -243,10 +248,13 @@ def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance
     days_in_month = calendar.monthrange(year, month_num)[1]
     unpaid_leave_days = get_unpaid_leave_days(employee_id, month)
 
-    daily_rate = float(basic_salary) / days_in_month
-    unpaid_leave_deduction = 0.0 if _skip_unpaid_leave_deduction(employee_id) else round(daily_rate * unpaid_leave_days, 2)
+    unpaid_leave_deduction = 0.0 if _skip_unpaid_leave_deduction(employee_id) else round((float(basic_salary) / days_in_month) * unpaid_leave_days, 2)
 
-    adjusted_salary = round(float(basic_salary) - unpaid_leave_deduction, 2)
+    pre_join_days, pre_join_deduction = get_pre_join_salary_deduction(basic_salary, month, join_date)
+    total_unpaid_days = unpaid_leave_days + pre_join_days
+    total_unpaid_deduction = round(unpaid_leave_deduction + pre_join_deduction, 2)
+
+    adjusted_salary = round(float(basic_salary) - total_unpaid_deduction, 2)
     epf_base_salary = round(adjusted_salary + float(allowance), 2)
     socso_base_salary = adjusted_salary
     gross_salary = round(
@@ -276,8 +284,10 @@ def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance
     net_pay = round_to_nearest_five_cents(net_pay)
 
     return {
-        "unpaid_leave_days": unpaid_leave_days,
-        "unpaid_leave_deduction": unpaid_leave_deduction,
+        "unpaid_leave_days": total_unpaid_days,
+        "unpaid_leave_deduction": total_unpaid_deduction,
+        "pre_join_days": pre_join_days,
+        "pre_join_deduction": pre_join_deduction,
         "basic_salary": basic_salary,
         "allowance": allowance,
         "red_packet": red_packet,
@@ -347,3 +357,22 @@ def get_unpaid_leave_days(employee_id: str, month: str) -> float:
             total += float(row.get("days", 0))
 
     return total
+
+def get_pre_join_salary_deduction(basic_salary: float, month: str, join_date: str | None) -> tuple[float, float]:
+    """
+    If the employee joins in the middle of the payroll month,
+    deduct the salary for the days before join date.
+    """
+    if not join_date:
+        return 0.0, 0.0
+
+    join = parse_date(join_date)
+    year, month_num = map(int, month.split("-"))
+    if join.year != year or join.month != month_num or join.day <= 1:
+        return 0.0, 0.0
+
+    days_in_month = calendar.monthrange(year, month_num)[1]
+    pre_join_days = min(join.day - 1, days_in_month)
+    daily_rate = float(basic_salary) / days_in_month
+    pre_join_deduction = round(daily_rate * pre_join_days, 2)
+    return float(pre_join_days), pre_join_deduction
