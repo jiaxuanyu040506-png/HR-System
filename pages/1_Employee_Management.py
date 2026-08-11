@@ -61,7 +61,7 @@ with tab_add:
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     st.markdown("#### New Employee Details")
     with st.form("add_employee_form"):
-        custom_id = st.text_input("Employee ID", placeholder="e.g. L001")
+        custom_id = st.text_input("Employee ID", placeholder="e.g. LH-ABC")
         name = st.text_input("Full Name")
         email = st.text_input("Email")
         phone = st.text_input("Phone Number")
@@ -135,6 +135,7 @@ with tab_edit:
         employee = df[df["name"] == selected_name].iloc[0]
 
         with st.form("edit_employee_form"):
+            edit_id = st.text_input("Employee ID", value=str(employee.get("employee_id", "")))
             edit_name = st.text_input("Full Name", value=str(employee.get("name", "")))
             edit_email = st.text_input("Email", value=str(employee.get("email", "")))
             edit_phone = st.text_input("Phone Number", value=str(employee.get("phone", "")))
@@ -170,7 +171,9 @@ with tab_edit:
         if save:
             update_row(
                 "Employees",
+                {"employee_id": employee["employee_id"]},
                 {
+                    "employee_id": edit_id,
                     "name": edit_name,
                     "email": edit_email,
                     "phone": edit_phone,
