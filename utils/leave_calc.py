@@ -43,7 +43,10 @@ from datetime import date, datetime, timedelta
 from utils.sheets_client import read_table, append_row, update_row, delete_row, get_row
 from utils.date_utils import parse_date
 from utils.leave_rules import (
-    count_working_days, get_prorated_annual_entitlement, get_prorated_medical_entitlement,
+    count_working_days,
+    get_prorated_annual_entitlement,
+    get_prorated_medical_entitlement,
+    split_annual_leave_to_unpaid,
 )
 
 LEAVE_TYPES = ["Annual", "Unpaid", "Medical", "Maternity", "Hospitalization", "Special", "Married"]
@@ -246,15 +249,20 @@ def _apply_approval_to_balance(employee_id: str, leave_type: str, days: float, y
 
     if leave_type == "Annual":
         remaining = float(balance["annual_total"]) - float(balance["annual_used"])
-        if remaining <= 0:
-            # No annual leave left at all — this request becomes Unpaid instead.
-            new_unpaid = float(balance.get("unpaid_used", 0)) + days
+        print("DEBUG", employee_id, days, remaining)
+        annual_used, unpaid_days = split_annual_leave_to_unpaid(days, remaining)
+
+        if annual_used > 0:
             update_row("LeaveBalance", {"employee_id": employee_id, "year": str(year)},
-                        {"unpaid_used": new_unpaid})
+                       {"annual_used": float(balance["annual_used"]) + annual_used})
+
+        if unpaid_days > 0:
+            update_row("LeaveBalance", {"employee_id": employee_id, "year": str(year)},
+                       {"unpaid_used": float(balance.get("unpaid_used", 0)) + unpaid_days})
+
+        if annual_used == 0:
             return "Unpaid"
-        new_used = float(balance["annual_used"]) + days
-        update_row("LeaveBalance", {"employee_id": employee_id, "year": str(year)},
-                    {"annual_used": new_used})
+
         return "Annual"
 
     if leave_type == "Medical":
@@ -379,7 +387,7 @@ def get_all_requests() -> list[dict]:
     return df.sort_values("submit_date", ascending=False).to_dict("records")
 
 
-# Updated 7 Aug, 2026 - 'Action'
+# Updated 7 Aug, 2026 - Added month filtering based on actual leave start/end dates
 def _request_matches_month(row, year: int, month: int) -> bool:
     """
     Return True if the request's leave period overlaps the given year/month.
@@ -401,7 +409,7 @@ def _request_matches_month(row, year: int, month: int) -> bool:
     return start_date <= month_end and end_date >= month_start
 
 
-# Updated 7 Aug, 2026 - 'Action'
+# Updated 7 Aug, 2026 - Added leave history lookup for HR and employee views
 def get_leave_history(year: int | None = None, month: int | None = None,
                       employee_id: str | None = None, name: str | None = None,
                       status: str | None = None) -> list[dict]:

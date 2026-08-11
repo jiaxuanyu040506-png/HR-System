@@ -55,6 +55,9 @@ SPECIAL_EPF_EMPLOYER_IDS = {"LH-LHY", "LH-QKC"}
 def _epf_employer_column(employee_id: str) -> str:
     return "lhy_employer_amount" if employee_id in SPECIAL_EPF_EMPLOYER_IDS else "employer_amount"
 
+def _skip_unpaid_leave_deduction(employee_id: str) -> bool:
+    return employee_id == "LH-LHY"
+
 def lookup_epf(basic_salary: float, age: int, employer_column: str = "employer_amount") -> dict:
     """
     Look up EPF employer/employee contribution amounts for a given
@@ -156,10 +159,12 @@ def calculate_payslip(employee_id: str, employee_name: str, month: str, basic_sa
 
     year, month_num = map(int, month.split("-"))
     days_in_month = calendar.monthrange(year, month_num)[1]
-    unpaid_days = get_unpaid_leave_days(employee_id, month)
+    unpaid_days = 0.0
+    if not _skip_unpaid_leave_deduction(employee_id):
+        unpaid_days = get_unpaid_leave_days(employee_id, month)
 
     daily_rate = float(basic_salary) / days_in_month
-    unpaid_leave_deduction = round(daily_rate * unpaid_days, 2)
+    unpaid_leave_deduction = 0.0 if _skip_unpaid_leave_deduction(employee_id) else round(daily_rate * unpaid_days, 2)
 
     adjusted_basic_salary = round(float(basic_salary) - unpaid_leave_deduction, 2)
 
@@ -239,7 +244,7 @@ def preview_payslip(employee_id: str, basic_salary: float, month: str, allowance
     unpaid_leave_days = get_unpaid_leave_days(employee_id, month)
 
     daily_rate = float(basic_salary) / days_in_month
-    unpaid_leave_deduction = round(daily_rate * unpaid_leave_days, 2)
+    unpaid_leave_deduction = 0.0 if _skip_unpaid_leave_deduction(employee_id) else round(daily_rate * unpaid_leave_days, 2)
 
     adjusted_salary = round(float(basic_salary) - unpaid_leave_deduction, 2)
     epf_base_salary = round(adjusted_salary + float(allowance), 2)

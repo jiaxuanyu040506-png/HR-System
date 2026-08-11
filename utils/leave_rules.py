@@ -427,3 +427,21 @@ def count_working_days(start: date, end: date) -> int:
             count += 1
         current += timedelta(days=1)
     return count
+
+
+def split_annual_leave_to_unpaid(requested_days: float, annual_leave_balance: float) -> tuple[float, float]:
+    """
+    Allocate requested annual leave days into:
+      - actual annual leave used
+      - unpaid leave days if annual leave is exhausted
+    """
+    requested_days = float(requested_days)
+    annual_leave_balance = float(max(annual_leave_balance, 0.0))
+
+    if requested_days <= 0:
+        return 0.0, 0.0
+
+    annual_used = min(requested_days, annual_leave_balance)
+    unpaid_days = round(requested_days - annual_used, 2)
+
+    return annual_used, unpaid_days
