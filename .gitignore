@@ -23,6 +23,7 @@ myenv/
 # Temporary / personal files
 0 claude.zip
 0 claude/
+Payslip/
 
 # Documents / images
 Sample_payslip.jpeg
@@ -33,4 +34,6 @@ debug_login.py
 generate_hash.py
 rebuild_leave_balance.py 
 reset_payslips.py
+delete_ea_forms.py
+delete_leave_records.py
 CURRENT_SESSION.md
