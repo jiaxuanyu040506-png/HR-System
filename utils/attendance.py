@@ -177,9 +177,8 @@ def get_attendance_for_month(employee_id: str, employee_name: str, year: int, mo
                 on_leave_type = leave_type
                 break
 
-        if on_leave_type:
-            # status, remarks = on_leave_type, ""
-            status = LEAVE_TYPE_CODES.get(on_leave_type, on_leave_type) 
+        if on_leave_type and not is_public_holiday(d) and not is_rest_day(d):
+            status = LEAVE_TYPE_CODES.get(on_leave_type, on_leave_type)
             remarks = on_leave_type
         elif is_public_holiday(d):
             status, remarks = "Public Holiday", ""
