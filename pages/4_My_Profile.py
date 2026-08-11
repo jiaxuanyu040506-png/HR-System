@@ -87,6 +87,7 @@ with col_personal:
         st.write(f"**Full Name:** {me['name']}")
         st.write(f"**Email:** {me['email']}")
         st.write(f"**Phone Number:** {me.get('phone', '-')}")
+        st.write(f"**Bank A/C:** {me.get('bank_account', '-') or '-'}")
         st.write(f"**Date of Birth:** {me.get('date_of_birth', '-')}")
         st.write(f"**Address:** {me.get('address', '-') or '-'}")
 
