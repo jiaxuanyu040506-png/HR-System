@@ -137,14 +137,14 @@ def generate_payslip_pdf_bytes(employee: dict, payslip: dict) -> bytes:
     epf_employer = float(payslip.get("epf_employer", 0))
     socso_employee = float(payslip.get("socso_employee", 0))
     socso_employer = float(payslip.get("socso_employer", 0))
-    skbbk = float(payslip.get("skbbk", 0))
     eis_employee = float(payslip.get("eis_employee", 0))
     eis_employer = float(payslip.get("eis_employer", 0))
+    skbbk = float(payslip.get("skbbk", 0))
     pcb = float(payslip.get("pcb", 0))
 
     _section_header(pdf, "DEDUCTIONS")
 
-    headers = ["", "EPF", "SOCSO", "BBK", "EIS", "PCB"]
+    headers = ["", "EPF", "SOCSO", "EIS", "SKBBK", "PCB"]
     label_w = 28
     other_w = (CONTENT_WIDTH - label_w) / 5
     widths = [label_w] + [other_w] * 5
@@ -158,8 +158,8 @@ def generate_payslip_pdf_bytes(employee: dict, payslip: dict) -> bytes:
 
     pdf.set_font("Helvetica", "", 7.5)
     rows = [
-        ["Employee", epf_employee, socso_employee, skbbk, eis_employee, pcb],
-        ["Employer", epf_employer, socso_employer, "-", eis_employer, "-"],
+        ["Employee", epf_employee, socso_employee, eis_employee, skbbk, pcb],
+        ["Employer", epf_employer, socso_employer, eis_employer, "-", "-"],
     ]
     for row in rows:
         for w, val in zip(widths, row):
