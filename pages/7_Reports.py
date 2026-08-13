@@ -5,7 +5,7 @@ from utils.auth import require_role
 from utils.sheets_client import read_table
 
 inject_css()
-require_role(["hr_admin"])
+require_role(["hr_admin", "manager"])
 render_nav_sidebar(st.session_state["role"])
 st.title("Reports")
 st.caption(

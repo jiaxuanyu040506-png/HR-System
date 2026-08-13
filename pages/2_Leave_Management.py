@@ -159,10 +159,8 @@ render_nav_sidebar(st.session_state["role"])
 st.title("Leave Management")
 
 role = st.session_state["role"]
-# section = st.radio(
-#     "Section", ["Leave Approval", "Leave Calendar", "Record Leave", "Employee Leave History"],
-#     horizontal=True, label_visibility="collapsed",
-# )
+
+# Main Navigation
 options = {
     "✅ Leave Approval": "Leave Approval",
     "📅 Leave Calendar": "Leave Calendar",
@@ -177,95 +175,265 @@ st.divider()
 
 # ---------- Record Leave ----------
 if section == "Record Leave":
-    view_mode = st.radio("View", ["Summary", "Record Leave"], horizontal=True, label_visibility="collapsed")
+    view_mode = st.radio("View", [
+            "📊 Summary",
+            "📝 Record Leave",
+        ], horizontal=True, label_visibility="collapsed")
 
-    if view_mode == "Summary":
+    # Leave Summary
+    if view_mode == "📊 Summary":
         st.subheader("Leave Summary")
-        # st.markdown("左边：每位员工的请假天数（按月堆叠）。右边：每月有多少人请假。")
 
-        month_counts = get_monthly_approved_leave_headcount(date.today().year)
-        summaries = get_employee_leave_summaries(date.today().year)
-        employee_by_type = get_employee_leave_type_days(date.today().year)
-        employee_monthly = get_employee_monthly_leave_days(date.today().year)
+        # Year Filter
+        current_year = date.today().year
+        balances = read_table("LeaveBalance")
+        available_years = []
+        if not balances.empty and "year" in balances.columns:
+            try:
+                available_years = sorted(balances["year"].dropna().astype(int).unique().tolist(),reverse=True,)
+            except Exception:
+                available_years = []
 
-        col_left, col_right = st.columns(2)
+        if current_year not in available_years:
+            available_years.insert(0, current_year,)
 
-        with col_left:
-            st.markdown("##### 每位员工请假天数")
+        selected_year = st.selectbox("Year", available_years, index=0, key="leave_summary_year",)
+
+        # LOAD DATA
+        employees = read_table("Employees")
+        summaries = get_employee_leave_summaries(selected_year)
+        employee_by_type = (get_employee_leave_type_days(selected_year))
+        employee_monthly = (get_employee_monthly_leave_days(selected_year))
+        month_counts = (get_monthly_approved_leave_headcount(selected_year))
+
+        # PREPARE SUMMARY DATAFRAME
+        if summaries:
+            summary_df = pd.DataFrame(summaries)
+        else:
+            summary_df = pd.DataFrame(
+                columns=[
+                    "employee_id",
+                    "employee_name",
+                    "department",
+                    "annual_total",
+                    "annual_used",
+                    "annual_remaining",
+                    "medical_total",
+                    "medical_used",
+                    "medical_remaining",
+                    "unpaid_used",
+                    "year",
+                ])
+
+        # KPI
+        total_employees = (len(employees) if not employees.empty else len(summary_df))
+        employees_used_al = 0
+        employees_used_medical = 0
+        if not summary_df.empty:
+            employees_used_al = int((summary_df["annual_used"].astype(float) > 0).sum())
+            employees_used_medical = int((summary_df["medical_used"].astype(float) > 0).sum())
+
+        # Current employees on leave
+        all_requests = get_all_requests()
+        today = date.today()
+        employees_on_leave = set()
+        for request in all_requests:
+            status = str(request.get("status", "",)).strip().lower()
+            if status != "approved":
+                continue
+            try:
+                start = parse_date(request["start_date"])
+                end = parse_date(request["end_date"])
+
+            except Exception:
+                continue
+
+            if start <= today <= end:
+                employees_on_leave.add(
+                    str(request.get("employee_id", "",)))
+
+        current_on_leave_count = len(employees_on_leave)
+
+        # KPI Cards
+        st.markdown("#### Overview")
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.metric("👥 Total Employees", total_employees,)
+        with k2:
+            st.metric("🌴 Employees Used AL", employees_used_al,)
+        with k3:
+            st.metric("🩺 Employees Used Medical", employees_used_medical,)
+        with k4:
+            st.metric("📅 Currently on Leave", current_on_leave_count,)
+
+        st.caption(
+            f"Leave overview for {selected_year}. "
+            "Employee-level balances are shown below.")
+        st.divider()
+
+        # EMPLOYEE FILTERS
+        st.markdown("#### Employee Leave Balance")
+        f1, f2, f3 = st.columns([1, 1, 1])
+
+        # Employee ID
+        employee_ids = []
+        if not summary_df.empty:
+            employee_ids = sorted(summary_df["employee_id"].astype(str).unique().tolist())
+        with f1:
+            selected_employee_id = st.selectbox("Employee ID", ["All Employees"]  + employee_ids, key="leave_summary_employee",)
+
+        # Department
+        departments = []
+        if not summary_df.empty:
+            departments = sorted([str(x) for x in summary_df["department"].dropna().unique() if str(x).strip()])
+        with f2:
+            selected_department = st.selectbox("Department", ["All Departments"] + departments, key="leave_summary_department",)
+
+        # Search employee
+        with f3:
+            search_employee = st.text_input( "Search Employee", placeholder="Name...", key="leave_summary_search",)
+
+        # APPLY FILTER
+        filtered_summary = summary_df.copy()
+        if (selected_employee_id != "All Employees"):
+            filtered_summary = filtered_summary[filtered_summary["employee_id"].astype(str) == selected_employee_id]
+        if (selected_department != "All Departments"):
+            filtered_summary = filtered_summary[filtered_summary["department"].astype(str) == selected_department]
+        if search_employee.strip():
+            keyword = (search_employee.strip().lower())
+            filtered_summary = (
+                filtered_summary[filtered_summary["employee_name"].astype(str).str.lower().str.contains(keyword,na=False,)])
+
+        # TABLE PREPARATION
+        if filtered_summary.empty:
+            st.info("No employees match the selected filters.")
+        else:
+            display_df = filtered_summary[
+                ["employee_id", "employee_name", "department",
+                 "annual_total", "annual_used", "annual_remaining",
+                 "medical_total", "medical_used", "medical_remaining",
+                 "unpaid_used",]].copy()
+            
+            display_df = display_df.rename(
+                columns={
+                    "employee_id":"Employee ID",
+                    "employee_name":"Employee",
+                    "department":"Department",
+                    "annual_total":"AL Total",
+                    "annual_used":"AL Used",
+                    "annual_remaining":"AL Remaining",
+                    "medical_total":"Medical Total",
+                    "medical_used":"Medical Used",
+                    "medical_remaining":"Medical Remaining",
+                    "unpaid_used":"Unpaid Used",})
+
+            # Format leave numbers
+            numeric_columns = [
+                "AL Total", "AL Used", "AL Remaining",
+                "Medical Total", "Medical Used", "Medical Remaining", "Unpaid Used",]
+
+            for col in numeric_columns:
+                if col in display_df.columns:
+                    display_df[col] = (pd.to_numeric(display_df[col], errors="coerce",).fillna(0).round(1))
+
+            display_df["Unpaid Status"] = display_df["Unpaid Used"].apply(
+                lambda x: "🚨 Has Unpaid" if float(x) > 0 else "✅ No Unpaid")
+
+            # Reorder columns
+
+            display_df = display_df[["Employee ID", "Employee", "Department",
+                                     "AL Total","AL Used","AL Remaining",
+                                     "Medical Total", "Medical Used", "Medical Remaining",
+                                     "Unpaid Used", "Unpaid Status",]]
+
+            styled_df = display_df.style.map(lambda _: "font-weight: bold;", subset=["AL Remaining", "Medical Used", "Unpaid Used"],).format({
+                "AL Total": "{:.1f}", "AL Used": "{:.1f}", "AL Remaining": "{:.1f}",
+                "Medical Total": "{:.1f}", "Medical Used": "{:.1f}", "Medical Remaining": "{:.1f}",
+                "Unpaid Used": "{:.1f}",})
+
+            st.dataframe(styled_df, use_container_width=True, hide_index=True, column_config={
+                    "AL Total":st.column_config.NumberColumn("AL Total", format="%.1f days",),
+                    "AL Used":st.column_config.NumberColumn("AL Used", format="%.1f days",),
+                    "AL Remaining": st.column_config.NumberColumn("AL Remaining", format="%.1f days",),
+                    "Medical Total": st.column_config.NumberColumn("Medical Total", format="%.1f days",),
+                    "Medical Used": st.column_config.NumberColumn("Medical Used", format="%.1f days",),
+                    "Medical Remaining": st.column_config.NumberColumn("Medical Remaining", format="%.1f days",),
+                    "Unpaid Used": st.column_config.NumberColumn("Unpaid Used", format="%.1f days",),
+                    "Unpaid Status": st.column_config.TextColumn("Unpaid Status",),},)
+        st.divider()
+
+        # LEAVE ANALYTICS
+        st.markdown("#### Leave Analytics")
+        chart_col1, chart_col2 = st.columns(2)
+
+        # CHART 1 - Leave Days by Employee
+        with chart_col1:
+            st.markdown("##### Leave Days by Employee")
             if employee_by_type:
                 emp_type_df = pd.DataFrame(employee_by_type)
-                totals_df = emp_type_df.groupby("employee_name", as_index=False)["days"].sum()
-                if alt is not None:
-                    bars = alt.Chart(emp_type_df).mark_bar().encode(
-                        x=alt.X("employee_name:N", title="Employee", sort=None),
-                        y=alt.Y("days:Q", title="Days on leave", stack="zero"),
-                        color=alt.Color("leave_type:N", title="Leave Type"),
-                        tooltip=["employee_name", "leave_type", "days"],
-                    ).properties(height=max(320, 25 * len(emp_type_df)))
-                    labels = alt.Chart(totals_df).mark_text(dy=-8, fontWeight="bold").encode(
-                        x=alt.X("employee_name:N", sort=None),
-                        y=alt.Y("days:Q"),
-                        text=alt.Text("days:Q", format=".1f"),
-                    )
-                    st.altair_chart(bars + labels, use_container_width=True)
-                else:
-                    pivot = emp_type_df.pivot_table(
-                        index="employee_name", columns="leave_type", values="days", aggfunc="sum", fill_value=0
-                    )
-                    st.bar_chart(pivot)
-            else:
-                st.info("目前还没有已批准的请假记录。")
 
-        with col_right:
-            st.markdown("##### 每月请假人数")
+                if not emp_type_df.empty:
+                    # Apply employee filter
+                    if (selected_employee_id != "All Employees"):
+                        emp_type_df = (emp_type_df[emp_type_df["employee_id"].astype(str) == selected_employee_id]
+                            if "employee_id" in emp_type_df.columns
+                            else emp_type_df[emp_type_df["employee_name"].astype(str) == str(filtered_summary["employee_name"].iloc[0])
+                                if not filtered_summary.empty
+                                else False
+                            ])
+
+                    # Apply department filter
+                    if (selected_department != "All Departments" and not filtered_summary.empty):
+                        allowed_names = set(filtered_summary["employee_name"].astype(str).tolist())
+                        emp_type_df = (emp_type_df[emp_type_df["employee_name"].astype(str).isin(allowed_names)])
+
+                    if (search_employee.strip() and not filtered_summary.empty):
+                        allowed_names = set(filtered_summary["employee_name"].astype(str).tolist())
+                        emp_type_df = (emp_type_df[emp_type_df["employee_name"].astype(str).isin(allowed_names)])
+
+                    if not emp_type_df.empty:
+                        if alt is not None:
+                            bars = (alt.Chart(emp_type_df).mark_bar().encode(
+                                x=alt.X("employee_name:N",title="Employee", sort=None,),
+                                y=alt.Y("days:Q", title="Leave Days", stack="zero",),
+                                color=alt.Color("leave_type:N", title="Leave Type",),
+                                tooltip=["employee_name", "leave_type", "days",],).properties(height=350))
+                            
+                            st.altair_chart(bars, use_container_width=True,)
+                        else:
+                            pivot = (emp_type_df.pivot_table(index="employee_name", columns="leave_type", values="days", aggfunc="sum", fill_value=0,))
+                            st.bar_chart(pivot)
+                    else:
+                        st.info("No leave data for the selected filters.")
+                else:
+                    st.info("No approved leave records yet.")
+            else:
+                st.info("No approved leave records yet.")
+
+
+        # CHART 2 - Monthly Leave Headcount
+        with chart_col2:
+            st.markdown("##### Employees on Leave by Month")
             if month_counts:
                 import calendar as _calendar
-                donut_df = pd.DataFrame({
-                    "month_key": list(month_counts.keys()),
-                    "employees_on_leave": list(month_counts.values()),
-                })
-                donut_df["month"] = donut_df["month_key"].apply(
-                    lambda k: _calendar.month_abbr[int(k.split("-")[1])]
-                )
-                if alt is not None:
-                    hbar = alt.Chart(donut_df).mark_bar().encode(
-                        y=alt.Y("month:N", title="Month", sort=list(donut_df["month"])),
-                        x=alt.X("employees_on_leave:Q", title="Employees on leave",
-                                axis=alt.Axis(format="d", tickMinStep=1)),
-                        tooltip=["month", "employees_on_leave"],
-                    ).properties(height=max(320, 50 * len(donut_df)))
-                    hbar_labels = alt.Chart(donut_df).mark_text(dx=8, align="left").encode(
-                        y=alt.Y("month:N", sort=list(donut_df["month"])),
-                        x=alt.X("employees_on_leave:Q"),
-                        text=alt.Text("employees_on_leave:Q", format="d"),
-                    )
-                    st.altair_chart(hbar + hbar_labels, use_container_width=True)
-                else:
-                    st.bar_chart(donut_df.set_index("month")["employees_on_leave"])
-            else:
-                st.info("目前还没有已批准的请假记录。")
+                donut_df = pd.DataFrame({"month_key": list(month_counts.keys()), "employees_on_leave":list(month_counts.values()),})
+                donut_df["month"] = donut_df["month_key"].apply(lambda k:_calendar.month_abbr[int(str(k).split("-")[1])])
 
-        st.divider()
-        if summaries:
-            summary_table = pd.DataFrame(summaries)[[
-                "employee_name", "department", "annual_total", "annual_used",
-                "annual_remaining", "medical_total", "medical_used", "medical_remaining", "unpaid_used",
-            ]]
-            summary_table = summary_table.rename(columns={
-                "employee_name": "姓名",
-                "department": "部门",
-                "annual_total": "Annual Total",
-                "annual_used": "Annual Used",
-                "annual_remaining": "Annual Remaining",
-                "medical_total": "Medical Total",
-                "medical_used": "Medical Used",
-                "medical_remaining": "Medical Remaining",
-                "unpaid_used": "Unpaid Used",
-            })
-            st.markdown("#### 员工请假余额汇总")
-            st.dataframe(summary_table, use_container_width=True)
-        else:
-            st.warning("没有员工数据可用于显示请假余额。")
+                if alt is not None:
+                    hbar = (alt.Chart(donut_df).mark_bar().encode(
+                        y=alt.Y("month:N", title="Month", sort=list(donut_df["month"]),),
+                        x=alt.X("employees_on_leave:Q", title="Employees", axis=alt.Axis(format="d", tickMinStep=1,),),
+                        tooltip=["month", "employees_on_leave",],).properties(height=350))
+                    hbar_labels = (alt.Chart(donut_df).mark_text(dx=8, align="left",).encode(
+                        y=alt.Y("month:N", sort=list(donut_df["month"]),),
+                        x=alt.X("employees_on_leave:Q"),
+                        text=alt.Text("employees_on_leave:Q", format="d",),))
+                    st.altair_chart(hbar + hbar_labels, use_container_width=True,)
+                else:
+                    st.bar_chart(
+                        donut_df.set_index("month")["employees_on_leave"])
+            else:
+                st.info("No approved leave records yet.")
     else:
         st.subheader("Record Leave for an Employee")
         employees = st.session_state.get("employees")
@@ -276,8 +444,13 @@ if section == "Record Leave":
         if employees.empty:
             st.caption("No employees found to record leave for.")
         else:
+            apply_to_all = st.checkbox("Apply to all employees", value=False)
+
             emp_map = dict(zip(employees["name"], employees["employee_id"]))
-            selected_name = st.selectbox("Employee", list(emp_map.keys()))
+            selected_name = None
+            if not apply_to_all:
+                selected_name = st.selectbox("Employee", list(emp_map.keys()))
+
             leave_type = st.selectbox("Leave Type", ["Annual", "Unpaid", "Medical", "Maternity", "Hospitalization", "Special"])
             col1, col2 = st.columns(2)
             start_date = col1.date_input("Start Date")
@@ -292,19 +465,48 @@ if section == "Record Leave":
                     st.error("End date must be on or after the start date.")
                 elif session == "Half Day" and start_date != end_date:
                     st.error("Half Day leave must start and end on the same date.")
+                elif not apply_to_all and selected_name is None:
+                    st.error("Please select an employee.")
                 else:
-                    try:
-                        status = "Approved" if approved else "Pending"
+                    status = "Approved" if approved else "Pending"
+                    if apply_to_all:
+                        created = []
+                        errors = []
+                        for _, employee in employees.iterrows():
+                            try:
+                                request_id, days = record_leave_request(
+                                    str(employee["employee_id"]),
+                                    leave_type,
+                                    start_date,
+                                    end_date,
+                                    reason,
+                                    session,
+                                    status=status,
+                                    approved_by=st.session_state["email"],
+                                )
+                                created.append((employee.get("name", ""), request_id, days))
+                            except ValueError as e:
+                                errors.append(f"{employee.get('name', employee.get('employee_id'))}: {e}")
+
+                        if created:
+                            st.success(f"Recorded leave for {len(created)} employees.")
+                        if errors:
+                            st.error("Some records failed:\n" + "\n".join(errors))
+                    else:
                         request_id, days = record_leave_request(
-                            emp_map[selected_name], leave_type, start_date, end_date,
-                            reason, session, status=status, approved_by=st.session_state["email"],
+                            emp_map[selected_name],
+                            leave_type,
+                            start_date,
+                            end_date,
+                            reason,
+                            session,
+                            status=status,
+                            approved_by=st.session_state["email"],
                         )
                         st.success(
                             f"Leave request {request_id} recorded for {selected_name}. "
                             f"Duration: {days} day(s). Status: {status}."
                         )
-                    except ValueError as e:
-                        st.error(str(e))
 
 elif section == "Leave Calendar":
     if not CALENDAR_AVAILABLE:
@@ -342,51 +544,22 @@ elif section == "Leave Calendar":
 # ---------- Leave Approval ----------
 elif section == "Leave Approval":
 
-    # --------------------------------------------------------
     # Get pending requests
-    # --------------------------------------------------------
-
     if role == "hr_admin":
-
         pending = get_all_pending_requests()
-
     else:
+        pending = get_pending_requests(st.session_state["email"])
 
-        pending = get_pending_requests(
-            st.session_state["email"]
-        )
-
-
-    # --------------------------------------------------------
     # No pending requests
-    # --------------------------------------------------------
-
     if not pending:
+        st.caption("No pending requests.")
 
-        st.caption(
-            "No pending requests."
-        )
-
-
-    # --------------------------------------------------------
     # Display pending requests
-    # --------------------------------------------------------
-
     for req in pending:
+        request_id = str(req["request_id"])
+        attachments = get_leave_attachment(request_id)
 
-        request_id = str(
-            req["request_id"]
-        )
-
-        attachments = get_leave_attachment(
-            request_id
-        )
-
-
-        # ====================================================
         # Leave Approval Card
-        # ====================================================
-
         st.markdown(
             "<div class='leave-approval-card'>"
             f"<h3>{req.get('employee_name', req['employee_id'])}</h3>"
@@ -418,9 +591,7 @@ elif section == "Leave Approval":
 
             f"<div><strong>Employee ID</strong>"
             f"{req['employee_id']}</div>"
-
             +
-
             (
                 f"<div><strong>Attachment</strong>"
                 f"{len(attachments)} file(s)</div>"
@@ -429,61 +600,24 @@ elif section == "Leave Approval":
                 "<div><strong>Attachment</strong>"
                 "None</div>"
             )
-
             +
-
             "</div>"
             "</div>",
             unsafe_allow_html=True,
         )
 
-
-        # ====================================================
         # Attachments
-        # ====================================================
-
         if attachments:
+            st.markdown("##### 📎 Attachments")
+            for index, file in enumerate(attachments):
+                file_name = file.get("file_name", "Attachment")
+                file_path = file.get("file_path")
+                mime_type = file.get("mime_type", "").strip().lower()
+                uploaded_date = file.get("uploaded_date", "")
 
-            st.markdown(
-                "##### 📎 Attachments"
-            )
-
-            for index, file in enumerate(
-                attachments
-            ):
-
-                file_name = file.get(
-                    "file_name",
-                    "Attachment"
-                )
-
-                file_path = file.get(
-                    "file_path"
-                )
-
-                mime_type = file.get(
-                    "mime_type",
-                    ""
-                ).strip().lower()
-
-                uploaded_date = file.get(
-                    "uploaded_date",
-                    ""
-                )
-
-
-                # ------------------------------------------------
                 # Fallback MIME type
-                # ------------------------------------------------
-
                 if not mime_type:
-
-                    extension = (
-                        file_name
-                        .lower()
-                        .split(".")[-1]
-                    )
-
+                    extension = (file_name.lower().split(".")[-1])
                     mime_map = {
                         "pdf": "application/pdf",
                         "jpg": "image/jpeg",
@@ -491,133 +625,51 @@ elif section == "Leave Approval":
                         "png": "image/png",
                     }
 
-                    mime_type = mime_map.get(
-                        extension,
-                        "application/octet-stream"
-                    )
+                    mime_type = mime_map.get(extension, "application/octet-stream")
 
-
-                # ------------------------------------------------
                 # Missing file path
-                # ------------------------------------------------
-
                 if not file_path:
-
-                    st.error(
-                        f"{file_name}: "
-                        "File path unavailable."
-                    )
-
+                    st.error(f"{file_name}: "
+                        "File path unavailable.")
                     continue
 
-
-                # =================================================
                 # Attachment information
-                # =================================================
-
-                col1, col2, col3 = st.columns(
-                    [4, 1, 1]
-                )
-
+                col1, col2, col3 = st.columns([4, 1, 1])
 
                 with col1:
-
                     if mime_type == "application/pdf":
-
                         icon = "📄"
 
-                    elif mime_type.startswith(
-                        "image/"
-                    ):
-
+                    elif mime_type.startswith("image/"):
                         icon = "🖼️"
-
                     else:
-
                         icon = "📎"
 
-
-                    st.write(
-                        f"{icon} **{file_name}**"
-                    )
+                    st.write(f"{icon} **{file_name}**")
 
                     if uploaded_date:
+                        st.caption(f"Uploaded: " f"{uploaded_date}")
 
-                        st.caption(
-                            f"Uploaded: "
-                            f"{uploaded_date}"
-                        )
-
-
-                # =================================================
                 # Load file from Supabase
-                # =================================================
-
                 try:
+                    file_bytes = download_file(file_path)
 
-                    file_bytes = download_file(
-                        file_path
-                    )
-
-
-                    # =================================================
                     # Preview button
-                    # =================================================
-
                     with col2:
+                        preview_key = (f"preview_mc_" f"{request_id}_" f"{index}")
+                        preview = st.toggle("Preview", key=preview_key)
 
-                        preview_key = (
-                            f"preview_mc_"
-                            f"{request_id}_"
-                            f"{index}"
-                        )
-
-                        preview = st.toggle(
-                            "Preview",
-                            key=preview_key
-                        )
-
-
-                    # =================================================
                     # Download button
-                    # =================================================
-
                     with col3:
+                        st.download_button("Download", data = file_bytes, file_name = file_name, mime = mime_type,
+                            key=(f"download_mc_" f"{request_id}_" f"{index}"), use_container_width=True,)
 
-                        st.download_button(
-                            "Download",
-                            data=file_bytes,
-                            file_name=file_name,
-                            mime=mime_type,
-                            key=(
-                                f"download_mc_"
-                                f"{request_id}_"
-                                f"{index}"
-                            ),
-                            use_container_width=True,
-                        )
-
-
-                    # =================================================
-                    # Preview
-                    # =================================================
-
+                    # Preview - PDF
                     if preview:
-
-                        # -----------------------------------------
-                        # PDF
-                        # -----------------------------------------
-
                         if mime_type == "application/pdf":
 
                             import base64
-
-                            base64_file = (
-                                base64.b64encode(
-                                    file_bytes
-                                ).decode("utf-8")
-                            )
-
+                            base64_file = (base64.b64encode(file_bytes).decode("utf-8"))
                             pdf_display = f"""
                             <iframe
                                 src="data:application/pdf;base64,{base64_file}"
@@ -631,33 +683,17 @@ elif section == "Leave Approval":
                             </iframe>
                             """
 
-                            st.markdown(
-                                pdf_display,
-                                unsafe_allow_html=True,
-                            )
+                            st.markdown(pdf_display, unsafe_allow_html=True,)
 
-
-                        # -----------------------------------------
                         # JPG / JPEG / PNG
-                        # -----------------------------------------
-
                         elif mime_type in [
                             "image/jpeg",
                             "image/png",
                         ]:
+                            st.image(file_bytes, use_container_width=True,)
 
-                            st.image(
-                                file_bytes,
-                                use_container_width=True,
-                            )
-
-
-                        # -----------------------------------------
                         # Unsupported file type
-                        # -----------------------------------------
-
                         else:
-
                             st.warning(
                                 "Preview is not "
                                 "available for this "
@@ -665,57 +701,24 @@ elif section == "Leave Approval":
                                 "Please download the file."
                             )
 
-
                 except Exception as e:
-
                     st.error(
                         f"Unable to load "
                         f"{file_name}."
                     )
 
-                    st.caption(
-                        f"Error: {e}"
-                    )
+                    st.caption(f"Error: {e}")
 
-
-        # ====================================================
         # Approve / Reject
-        # ====================================================
-
-        cols = st.columns(
-            [1, 1]
-        )
-
-
+        cols = st.columns([1, 1])
         with cols[0]:
-
-            if st.button(
-                "Approve",
-                key=f"appr_{request_id}",
-                use_container_width=True,
-            ):
-
-                approve_request(
-                    request_id,
-                    st.session_state["email"],
-                )
-
+            if st.button("Approve", key=f"appr_{request_id}", use_container_width=True,):
+                approve_request(request_id, st.session_state["email"],)
                 st.rerun()
 
-
         with cols[1]:
-
-            if st.button(
-                "Reject",
-                key=f"rej_{request_id}",
-                use_container_width=True,
-            ):
-
-                reject_request(
-                    request_id,
-                    st.session_state["email"],
-                )
-
+            if st.button("Reject", key=f"rej_{request_id}", use_container_width=True,):
+                reject_request(request_id, st.session_state["email"],)
                 st.rerun()
 
 # ---------- Employee Leave History ----------
@@ -723,8 +726,7 @@ else:
     sub_view = st.radio("Sub-view", ["Pending", "History"], horizontal=True, label_visibility="collapsed")
     all_requests = get_all_requests()
 
-    # st.subheader("Employee Leave History")
-
+    # Request card function
     def _render_request_card(req, show_delete=True):
         st.markdown(
             "<div class='leave-approval-card'>"
@@ -757,6 +759,7 @@ else:
                 st.caption("Use this button to remove an incorrectly entered or mistaken leave record.")
         st.divider()
 
+    # Pending
     if sub_view == "Pending":
         rows = [r for r in all_requests if r["status"] == "Pending"]
         st.subheader("Pending Requests")
@@ -766,6 +769,7 @@ else:
             for req in rows:
                 _render_request_card(req)
 
+    # History
     else:
         history_rows = [r for r in all_requests if r["status"] != "Pending"]
         if not history_rows:
@@ -780,8 +784,9 @@ else:
             if selected_employee not in employee_list:
                 selected_employee = None
 
+            # Employee List
             if selected_employee is None:
-                st.caption("Click an employee to view their individual leave history.")
+                st.caption("Select an employee to view their individual leave history.")
                 list_df = pd.DataFrame({
                     "Employee": employee_list,
                     "Records": [counts[name] for name in employee_list],
@@ -793,6 +798,7 @@ else:
                 if event and event.selection and event.selection["rows"]:
                     st.session_state["history_selected_employee"] = employee_list[event.selection["rows"][0]]
                     st.rerun()
+            # Individual history
             else:
                 if st.button("← Back to employee list"):
                     st.session_state.pop("history_selected_employee", None)

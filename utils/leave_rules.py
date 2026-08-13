@@ -23,18 +23,14 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from utils.date_utils import parse_date
+from utils.sheets_client import read_table
 
-
-# ============================================================
 # 1. Leave entitlement based on tenure
-# ============================================================
-
 def _years_of_service(join_date: str, as_of: date | None = None) -> float:
     """Years of service as a decimal (e.g. 2.5), based on join_date."""
     jd = parse_date(join_date)
     as_of = as_of or date.today()
     return (as_of - jd).days / 365.25
-
 
 def get_annual_leave_entitlement(join_date: str) -> int:
     """
@@ -50,7 +46,6 @@ def get_annual_leave_entitlement(join_date: str) -> int:
         return 12
     else:
         return 16
-
 
 def get_sick_leave_entitlement(join_date: str) -> int:
     """
@@ -73,7 +68,7 @@ def get_sick_leave_entitlement(join_date: str) -> int:
 # ============================================================
 #
 # Rules (as confirmed):
-#   - Probation lasts a fixed 6 months from join_date.
+#   - Probation lasts a fixed 3 months from join_date.
 #   - During probation: NO annual leave at all (entitlement = 0).
 #     Medical leave is NOT blocked during probation — it's prorated,
 #     same as annual leave once probation clears.
@@ -99,7 +94,6 @@ def get_sick_leave_entitlement(join_date: str) -> int:
 
 PROBATION_MONTHS = 3
 
-
 def _add_months(d: date, months: int) -> date:
     import calendar as _calendar
     month_index = d.month - 1 + months
@@ -107,7 +101,6 @@ def _add_months(d: date, months: int) -> date:
     month = month_index % 12 + 1
     day = min(d.day, _calendar.monthrange(year, month)[1])
     return date(year, month, day)
-
 
 def is_in_probation(join_date: str, as_of: date | None = None) -> bool:
     """True if, as of `as_of` (default: today), the employee is still
@@ -135,7 +128,6 @@ def _months_remaining_in_year(from_date: date) -> int:
 
     return 12 - from_date.month
 
-
 def _bracket_for_years(years: float, kind: str) -> int:
     """kind is 'annual' or 'medical' — mirrors get_annual_leave_entitlement /
     get_sick_leave_entitlement's exact thresholds, just parameterized."""
@@ -156,55 +148,32 @@ def _bracket_for_years(years: float, kind: str) -> int:
 
 # Updated 23 July, 2026
 def _prorated_entitlement(join_date: str, year: int, kind: str):
-
     jd = parse_date(join_date)
 
     year_start = date(year,1,1)
     year_end = date(year,12,31)
 
-
     if jd.year > year:
         return 0.0
-
 
     # join year
     if jd.year == year:
         months = _months_remaining_in_year(jd)
+        entitlement = _bracket_for_years(0, kind)
 
-        entitlement = _bracket_for_years(
-            0,
-            kind
-        )
-
-        return round(
-            entitlement * months / 12 * 2
-        ) / 2
-
-
+        return round(entitlement * months / 12 * 2) / 2
 
     # entitlement at start of year
-    years_at_start = (
-        year_start - jd
-    ).days / 365.25
-
-
-    current_bracket = _bracket_for_years(
-        years_at_start,
-        kind
-    )
-
+    years_at_start = (year_start - jd).days / 365.25
+    current_bracket = _bracket_for_years(years_at_start, kind)
 
     # anniversary
     two_year_anniv = _add_months(jd,24)
     five_year_anniv = _add_months(jd,60)
 
-
     crossing_date = None
-
-
     if year_start <= two_year_anniv <= year_end:
         crossing_date = two_year_anniv
-
     elif year_start <= five_year_anniv <= year_end:
         crossing_date = five_year_anniv
 
@@ -212,138 +181,20 @@ def _prorated_entitlement(join_date: str, year: int, kind: str):
     if crossing_date is None:
         return float(current_bracket)
 
-    # =====================
-    # crossing year
-    # use NEW entitlement
-    # =====================
-
+    # crossing year - use NEW entitlement
     months = _months_remaining_in_year(crossing_date)
-
     years_after_crossing = (crossing_date.year - jd.year)
     if (crossing_date.month,crossing_date.day) < (jd.month,jd.day):
         years_after_crossing -= 1
 
     new_bracket = _bracket_for_years(years_after_crossing, kind)
-
     return round( new_bracket * months / 12 * 2) / 2
 
-    # =========================
     # 4. Stable entitlement
-    # =========================
-
     # Use year-end service length
-    years_at_year_end = (
-        year_end - jd
-    ).days / 365.25
-
-
-    bracket = _bracket_for_years(
-        years_at_year_end,
-        kind
-    )
-
-
+    years_at_year_end = (year_end - jd).days / 365.25
+    bracket = _bracket_for_years(years_at_year_end, kind)
     return float(bracket)
-
-# def _prorated_entitlement(join_date: str, year: int, kind: str) -> float:
-#     """
-#     Calculate annual/medical leave entitlement.
-
-#     Rules:
-#     1. Annual leave only starts after probation.
-#     2. Medical leave starts from joining date.
-#     3. Determine entitlement bracket at the START of the year.
-#     4. If joining or probation ends during the year -> prorate.
-#     5. If crossing 2-year / 5-year tenure during the year:
-#        use entitlement before crossing.
-#     6. Month counting:
-#        - day 1 includes the month
-#        - day > 1 excludes the month
-#     7. Round to nearest 0.5 day.
-#     """
-#     jd = parse_date(join_date)
-#     year_start = date(year, 1, 1)
-#     year_end = date(year, 12, 31)
-
-#     if jd.year > year:
-#         return 0.0  # not employed yet in this year
-
-#     # Annual Leave - Probation Check
-#     if kind == "annual":
-#         probation_end = _add_months(jd, PROBATION_MONTHS)
-
-#         # Still under probation for the whole year
-#         if probation_end > year_end:
-#             return 0.0
-        
-#         # probation ends within this year
-#         if year_start <= probation_end <= year_end:
-#             # months = _months_remaining_in_year(probation_end)
-#             # entitlement = _bracket_for_years((probation_end - jd).days / 365.25, kind)
-#             # return round(entitlement * months / 12 * 2) / 2
-
-#             months = _months_remaining_in_year(jd)
-#             entitlement = _bracket_for_years((year_end - jd).days / 365.25, kind)
-#             return round(entitlement * months / 12 * 2) / 2
-
-#         # still in probation for entire year
-#         if probation_end > year_end:
-#             return 0.0
-        
-#     # Determine entitlement bracket at start of year
-#     years_at_year_start = (year_start - jd).days / 365.25
-#     bracket_at_start = _bracket_for_years(years_at_year_start, kind)
-
-#      # New joiner in this year
-#     if jd.year == year:
-#         months = _months_remaining_in_year(jd)
-#         # entitlement = bracket_at_start * months / 12
-#         entitlement = _bracket_for_years(0, kind)
-#         return round(entitlement * 2) / 2
-
-#     # Check if crossing 2/5 years happens in this year
-#     two_year_anniv = _add_months(jd, 24)
-#     five_year_anniv = _add_months(jd, 60)
-
-#     crossing_date = None
-
-#     if year_start <= two_year_anniv <= year_end:
-#         crossing_date = two_year_anniv
-#     elif year_start <= five_year_anniv <= year_end:
-#         crossing_date = five_year_anniv
-
-#     # No crossing -> full entitlement
-#     if crossing_date is None:
-#         return float(bracket_at_start)
-
-#     # Crossing year:
-#     # use entitlement before crossing
-#     months = _months_remaining_in_year(crossing_date)
-#     entitlement = bracket_at_start * months / 12
-#     return round(entitlement * 2) / 2
-
-
-    # crossing_date = None
-    # if jd.year == year:
-    #     crossing_date = jd
-    # else:
-    #     two_year_anniv = _add_months(jd, 24)
-    #     five_year_anniv = _add_months(jd, 60)
-    #     if year_start <= two_year_anniv <= year_end:
-    #         crossing_date = two_year_anniv
-    #     elif year_start <= five_year_anniv <= year_end:
-    #         crossing_date = five_year_anniv
-
-    # years_at_year_end = (year_end - jd).days / 365.25
-    # bracket_at_year_end = _bracket_for_years(years_at_year_end, kind)
-
-    # if crossing_date is None:
-    #     return float(bracket_at_year_end)  # stable all year -> no proration
-
-    # months = _months_remaining_in_year(crossing_date)
-    # entitlement = bracket_at_year_end * months / 12
-    # return round(entitlement * 2) / 2
-
 
 def get_prorated_annual_entitlement(join_date: str, year: int | None = None,
                                      as_of: date | None = None) -> float:
@@ -361,7 +212,6 @@ def get_prorated_annual_entitlement(join_date: str, year: int | None = None,
 
     return _prorated_entitlement(join_date, year, "annual")
 
-
 def get_prorated_medical_entitlement(join_date: str, year: int | None = None) -> float:
     """
     Medical (sick) leave entitlement for a given year — same crossing-
@@ -370,64 +220,203 @@ def get_prorated_medical_entitlement(join_date: str, year: int | None = None) ->
     year = year or date.today().year
     return _prorated_entitlement(join_date, year, "medical")
 
+# PUBLIC / SPECIAL HOLIDAYS
+def get_public_holidays() -> dict[date, str]:
+    """
+    Load active public and special holidays from Google Sheets.
 
-# ============================================================
-# 2. Public holidays (Johor) — VERIFY movable dates before relying on this
-# ============================================================
-#
-# HOW TO UPDATE THIS EVERY YEAR (or add an ad-hoc holiday):
-#   Just add a new line below with the date and a label — nothing else
-#   needs to change. This dict is not tied to a single year, so 2027's
-#   dates simply get added alongside 2026's; nothing needs renaming.
-#   Example:
-#       date(2027, 1, 1): "New Year's Day",
-#
-PUBLIC_HOLIDAYS = {
-    date(2026, 2, 16): "Chinese New Year Eve",
-    date(2026, 2, 17): "Chinese New Year Day 1",
-    date(2026, 2, 18): "Chinese New Year Day 2",
-    date(2026, 3, 21): "Hari Raya Aidilfitri Day 1 (初一)",
-    date(2026, 3, 22): "Hari Raya Aidilfitri Day 2 (初二)",
-    date(2026, 3, 23): "Johor Sultan's Birthday",
-    date(2026, 5, 1): "Labour Day",
-    date(2026, 5, 27): "Hari Raya Haji — ESTIMATED, confirm with JAKIM/official gazette",
-    date(2026, 6, 1): "Agong's Birthday",
-    date(2026, 8, 31): "Independence Day (Merdeka)",
-    date(2026, 9, 16): "Malaysia Day",
-    date(2026, 12, 25): "Christmas",
-    # Add 2027 dates here once confirmed, e.g.:
-    # date(2027, 1, 1): "New Year's Day",
-}
+    PublicHolidays sheet columns:
 
+        date
+        holiday_name
+        holiday_type
+        year
+        active
 
-def is_rest_day(d: date) -> bool:
-    """Saturday and Sunday are rest days for this company."""
-    return d.weekday() in (5, 6)  # Monday=0 ... Saturday=5, Sunday=6
+    holiday_type:
+        Public Holiday
+        Special Holiday
 
+    Returns:
+        {
+            date(2026, 8, 31): "Merdeka Day",
+            date(2026, 9, 16): "Malaysia Day",
+            ...
+        }
+    """
+
+    df = read_table("PublicHolidays")
+
+    if df.empty:
+        return {}
+
+    holidays = {}
+    for _, row in df.iterrows():
+        # Active
+        active = str(row.get("active", "")).strip().lower()
+
+        # If the sheet has an active column, only accept
+        # active holidays.
+        if "active" in df.columns:
+            if active not in ("true", "yes", "1"):
+                continue
+
+        # Date
+        try:
+            holiday_date = parse_date(row["date"])
+        except Exception:
+            continue
+
+        # Holiday name
+        holiday_name = str(row.get("holiday_name", "")).strip()
+        holidays[holiday_date] = holiday_name
+    return holidays
+
+def get_holiday_info(d: date) -> dict | None:
+    """
+    Return holiday information for a specific date.
+
+    PublicHolidays sheet:
+
+        date
+        holiday_name
+        holiday_type
+        year
+        active
+
+    Returns:
+
+        {
+            "date": date(...),
+            "name": "...",
+            "type": "Public Holiday"
+        }
+
+    or None if the date is not a holiday.
+    """
+
+    df = read_table("PublicHolidays")
+
+    if df.empty:
+        return None
+
+    for _, row in df.iterrows():
+        # Active
+        if "active" in df.columns:
+            active = str(row.get("active", "")).strip().lower()
+
+            if active not in ("true", "yes", "1",):
+                continue
+
+        # Date
+        try:
+            holiday_date = parse_date(row["date"])
+        except Exception:
+            continue
+
+        if holiday_date != d:
+            continue
+
+        # Holiday name
+        holiday_name = str(row.get("holiday_name", "")).strip()
+
+        # Holiday type
+        holiday_type = str(row.get("holiday_type", "Public Holiday")).strip()
+
+        # Normalize old naming
+        if holiday_type == "Special Leave":
+            holiday_type = "Special Holiday"
+
+        return {
+            "date": holiday_date,
+            "name": holiday_name,
+            "type": holiday_type,
+        }
+    return None
 
 def is_public_holiday(d: date) -> bool:
-    return d in PUBLIC_HOLIDAYS
+    """
+    True if the date is an active Public Holiday.
+    """
 
+    holiday = get_holiday_info(d)
+
+    if not holiday:
+        return False
+
+    return holiday["type"] == "Public Holiday"
+
+def is_special_leave_day(d: date) -> bool:
+    """
+    True if the date is an active Special Holiday.
+
+    Function name is kept as-is so existing code that imports
+    is_special_leave_day() will continue to work.
+    """
+
+    holiday = get_holiday_info(d)
+
+    if not holiday:
+        return False
+
+    return holiday["type"] == "Special Holiday"
+
+def is_rest_day(d: date) -> bool:
+    """
+    Saturday and Sunday are rest days.
+    """
+
+    return d.weekday() in (5, 6)
 
 def is_working_day(d: date) -> bool:
-    return not is_rest_day(d) and not is_public_holiday(d)
-
-
-def count_working_days(start: date, end: date) -> int:
     """
-    Count the number of working days (inclusive of both start and end)
-    in a date range, excluding rest days (Sat/Sun) and public holidays.
-    This is what actually gets deducted from an employee's leave balance
-    — e.g. requesting Fri-Mon only deducts the Friday and Monday.
+    A working day is:
+
+    - not Saturday
+    - not Sunday
+    - not Public Holiday
+    - not Special Holiday
     """
+    return (
+        not is_rest_day(d)
+        and not is_public_holiday(d)
+        and not is_special_leave_day(d)
+    )
+
+def count_working_days(start: date, end: date,) -> int:
+    """
+    Count working days between start and end inclusive.
+
+    Excludes:
+
+    - Saturday
+    - Sunday
+    - Public Holiday
+    - Special Holiday
+    """
+
     count = 0
     current = start
+
     while current <= end:
         if is_working_day(current):
             count += 1
         current += timedelta(days=1)
     return count
 
+def is_non_working_day(d: date) -> bool:
+    """
+    True if the date is:
+
+    - Rest Day
+    - Public Holiday
+    - Special Holiday
+    """
+    return (
+        is_rest_day(d)
+        or is_public_holiday(d)
+        or is_special_leave_day(d)
+    )
 
 def split_annual_leave_to_unpaid(requested_days: float, annual_leave_balance: float) -> tuple[float, float]:
     """

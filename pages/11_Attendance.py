@@ -8,13 +8,13 @@ from utils.attendance import (
     get_attendance_for_month, get_monthly_summary, get_yearly_summary,
     get_attendance_matrix_for_employee_year, mark_attendance,
     clear_attendance_override, get_attendance_matrix, get_attendance_matrices_for_year,
-    get_rest_day_columns, MANUAL_STATUSES, STATUS_CODES,
+    get_yearly_leave_summary, get_rest_day_columns, MANUAL_STATUSES, STATUS_CODES,
 )
 from utils.leave_calc import get_leave_balance, get_leave_history
 from utils.excel_export import attendance_month_to_excel, attendance_year_to_excel
 
 inject_css()
-require_role(["hr_admin"])
+require_role(["hr_admin", "manager"])
 render_nav_sidebar(st.session_state["role"])
 st.title("Attendance")
 # st.caption(
@@ -101,15 +101,11 @@ if view_mode == "Individual Employee":
 
     # Leave Impact
     st.markdown("### 🏖 Leave Impact")
-    balance = get_leave_balance(emp_id,selected_year,)
-    if balance:
-        annual_used = float(balance.get("annual_used", 0) or 0)
-        medical_used = float(balance.get("medical_used", 0) or 0)
-        unpaid_used = float(balance.get("unpaid_used", 0) or 0)
-    else:
-        annual_used = 0
-        medical_used = 0
-        unpaid_used = 0
+    leave_summary = get_yearly_leave_summary(emp_id, selected_year,)
+
+    annual_used = float(leave_summary.get("AL", 0) or 0)
+    medical_used = float(leave_summary.get("MC", 0) or 0)
+    unpaid_used = float(leave_summary.get("UPL", 0) or 0)
 
     c1, c2, c3 = st.columns(3)
     with c1:

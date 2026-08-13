@@ -196,18 +196,160 @@ with tab_edit:
         # Updated 17 July
         year = date.today().year
         balance = get_leave_balance(employee["employee_id"], year)
+        st.html("<div style='height:18px'></div>")
+
+        st.html(
+            f"""
+            <div style="
+                font-size:1.15rem;
+                font-weight:700;
+                color:#172033;
+                margin-bottom:10px;
+            ">
+                Leave Balance · {year}
+            </div>
+            """
+        )
+
         if balance is None:
-            st.warning(f"No leave balance row found for {year}. You can initialize it when needed.")
+            st.html(
+                f"""
+                <div style="
+                    border:1px solid #fde68a;
+                    border-radius:12px;
+                    padding:14px 16px;
+                    background:#fffbeb;
+                    color:#92400e;
+                    font-size:0.9rem;
+                ">
+                    No leave balance found for {year}.
+                    The balance can be initialized when needed.
+                </div>
+                """
+            )
+
         else:
-            annual_remaining = float(balance["annual_total"]) - float(balance["annual_used"])
-            sick_remaining = float(balance["medical_total"]) - float(balance["medical_used"])
-            st.markdown("#### Leave Balance (Current Year)")
-            st.table({
-                "Annual Total": [balance["annual_total"]],
-                "Annual Used": [balance["annual_used"]],
-                "Annual Remaining": [annual_remaining],
-                "Sick Remaining": [sick_remaining],
-            })
+            annual_total = float(balance["annual_total"])
+            annual_used = float(balance["annual_used"])
+            annual_remaining = (annual_total - annual_used)
+
+            medical_total = float(balance["medical_total"])
+            medical_used = float(balance["medical_used"])
+            medical_remaining = (medical_total - medical_used)
+
+            unpaid_used = float(balance.get("unpaid_used", 0))
+            
+            # BALANCE CARDS
+            b1, b2, b3 = st.columns(3)
+            with b1:
+                annual_progress = (max( 0, min(100, (annual_used / annual_total * 100) if annual_total > 0 else 0,),))
+                st.html(
+                    f"""
+                    <div class="balance-card">
+
+                        <div class="balance-card-title">
+                            🏖️ Annual Leave
+                        </div>
+
+                        <div class="balance-number">
+                            {annual_remaining:g}
+                        </div>
+
+                        <div class="balance-label">
+                            days remaining
+                        </div>
+
+                        <div class="balance-detail">
+                            {annual_used:g} used
+                            ·
+                            {annual_total:g} total
+                        </div>
+
+                        <div class="balance-progress">
+                            <div style="
+                                width:{annual_progress:.1f}%;
+                                height:100%;
+                                background:#5b8def;
+                                border-radius:999px;
+                            "></div>
+                        </div>
+
+                    </div>
+                    """
+                )
+
+            with b2:
+                medical_progress = (max(0, min(100, (medical_used / medical_total * 100) if medical_total > 0 else 0, ),))
+                st.html(
+                    f"""
+                    <div class="balance-card">
+
+                        <div class="balance-card-title">
+                            🩺 Medical Leave
+                        </div>
+
+                        <div class="balance-number">
+                            {medical_remaining:g}
+                        </div>
+
+                        <div class="balance-label">
+                            days remaining
+                        </div>
+
+                        <div class="balance-detail">
+                            {medical_used:g} used
+                            ·
+                            {medical_total:g} total
+                        </div>
+
+                        <div class="balance-progress">
+                            <div style="
+                                width:{medical_progress:.1f}%;
+                                height:100%;
+                                background:#f28c8c;
+                                border-radius:999px;
+                            "></div>
+                        </div>
+
+                    </div>
+                    """
+                )
+
+            with b3:
+                st.html(
+                    f"""
+                    <div class="balance-card">
+
+                        <div class="balance-card-title">
+                            💼 Unpaid Leave
+                        </div>
+
+                        <div class="balance-number">
+                            {unpaid_used:g}
+                        </div>
+
+                        <div class="balance-label">
+                            days used
+                        </div>
+
+                        <div class="balance-detail">
+                            No annual entitlement
+                        </div>
+
+                        <div class="balance-progress">
+                            <div style="
+                                width:100%;
+                                height:100%;
+                                background:#94a3b8;
+                                border-radius:999px;
+                                opacity:0.55;
+                            "></div>
+                        </div>
+
+                    </div>
+                    """
+                )
+
             if st.button("🔄 Recalculate this year's leave balance", key="recalc_balance_btn"):
                 recalculate_year_balance(employee["employee_id"], year)
                 st.success("Recalculated using the current entitlement rules.")

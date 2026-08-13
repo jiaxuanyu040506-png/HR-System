@@ -4,6 +4,6 @@ from utils.auth import require_role
 from utils.dashboard import render_hr_dashboard
 
 inject_css()
-require_role(["hr_admin"])
+require_role(["hr_admin", "manager"])
 render_nav_sidebar(st.session_state["role"])
 render_hr_dashboard()

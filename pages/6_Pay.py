@@ -1,138 +1,538 @@
 import streamlit as st
 import pandas as pd
+import base64
+import re
+from datetime import date
+
 from utils.ui import inject_css, render_nav_sidebar
 from utils.auth import require_login
 from utils.sheets_client import read_table
 from utils.pdf_generator import generate_payslip_pdf_bytes
-from utils.ea_forms import get_ea_forms_for_employee, download_ea_form_bytes
+from utils.ea_forms import (
+    get_ea_forms_for_employee,
+    download_ea_form_bytes,
+)
 
+# PAGE SETUP
 inject_css()
 require_login()
 render_nav_sidebar(st.session_state["role"])
+
 st.title("Pay")
 
+# LOAD DATA
 employees = read_table("Employees")
 payslips = read_table("Payslips")
-me = employees[employees["employee_id"] == st.session_state["employee_id"]]
+employee_id = st.session_state["employee_id"]
+
+# EMPLOYEE INFORMATION
+me = employees[employees["employee_id"].astype(str) == str(employee_id)]
 
 if me.empty:
     st.error("Could not find your employee record.")
     st.stop()
-
 my_employee = me.iloc[0].to_dict()
-my_payslips = payslips[payslips["employee_id"] == st.session_state["employee_id"]] if not payslips.empty else payslips
 
-c1, c2, c3 = st.columns(3)
-if not my_payslips.empty:
-    total_earnings = my_payslips["net_pay"].astype(float).sum()
-    latest = my_payslips.sort_values("month", ascending=False).iloc[0]
-    c1.metric("Total Earnings (YTD)", f"RM {total_earnings:,.2f}")
-    c2.metric("Latest Payslip", latest["month"])
+# LOAD EMPLOYEE PAYSLIPS
+if not payslips.empty:
+    my_payslips = payslips[payslips["employee_id"].astype(str) == str(employee_id)].copy()
 else:
-    c1.metric("Total Earnings (YTD)", "RM 0.00")
-    c2.metric("Latest Payslip", "—")
-c3.metric("Next Payroll", "—")
-st.caption("'Next Payroll' date isn't tracked yet — placeholder for now.")
+    my_payslips = pd.DataFrame()
 
-st.divider()
-st.subheader("Payslip History")
-if my_payslips.empty:
-    st.caption("No payslips yet.")
-else:
-    for idx, (_, row) in enumerate(my_payslips.sort_values("month", ascending=False).iterrows()):
-        payslip = row.to_dict()
-        with st.container(border=True):
-            col1, col2 = st.columns([3, 1])
-            col1.write(f"**{payslip['month']}** — Net pay: RM {float(payslip['net_pay']):.2f}")
-            pdf_bytes = generate_payslip_pdf_bytes(my_employee, payslip)
-            col2.download_button(
-                "Download PDF", pdf_bytes,
-                file_name=f"{my_employee['name']}_{payslip['month']}.pdf",
-                mime="application/pdf",
-                key=f"dl_{payslip['payslip_id']}_{idx}",
-            )
+# HELPER FUNCTIONS
+def get_payslip_year(value):
+    """
+    Extract year from different month formats.
 
-st.divider()
-st.subheader("EA Form")
+    Examples:
+        2026-06     -> 2026
+        2026/06     -> 2026
+        Jun 2026    -> 2026
+        June 2026   -> 2026
+        2026        -> 2026
+    """
 
-# Get EA Forms belonging to the logged-in employee
-my_ea_forms = get_ea_forms_for_employee(
-    st.session_state["employee_id"]
+    if value is None:
+        return None
+
+    try:
+        text = str(value).strip()
+        parsed = pd.to_datetime(text, errors="coerce")
+
+        if not pd.isna(parsed):
+            return int(parsed.year)
+
+        match = re.search(r"(20\d{2})", text)
+        if match:
+            return int(match.group(1))
+
+    except Exception:
+        pass
+
+    return None
+
+def format_money(value):
+    try:
+        return f"RM {float(value):,.2f}"
+
+    except Exception:
+        return "RM 0.00"
+
+
+def format_payslip_month(value):
+    if value is None or value == "":
+        return "-"
+
+    try:
+        parsed = pd.to_datetime(value, errors="coerce")
+        if not pd.isna(parsed):
+            return parsed.strftime("%B %Y")
+
+    except Exception:
+        pass
+
+    return str(value)
+
+
+def get_payslip_sort_date(value):
+    try:
+        parsed = pd.to_datetime(value, errors="coerce")
+        if not pd.isna(parsed):
+            return parsed
+
+    except Exception:
+        pass
+
+    return pd.Timestamp.min
+
+# CUSTOM PAY PAGE STYLING
+st.markdown(
+    """
+    <style>
+
+    /* --------------------------------------------------------
+       Pay page intro
+    -------------------------------------------------------- */
+
+    .pay-welcome {
+        background: linear-gradient(
+            135deg,
+            #f8fbff 0%,
+            #eef6ff 100%
+        );
+        border: 1px solid #dbeafe;
+        border-radius: 14px;
+        padding: 18px 20px;
+        margin-bottom: 20px;
+    }
+
+    .pay-welcome-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #172033;
+        margin-bottom: 4px;
+    }
+
+    .pay-welcome-text {
+        font-size: 0.9rem;
+        color: #64748b;
+    }
+
+    /* --------------------------------------------------------
+       Document card information
+    -------------------------------------------------------- */
+
+    .pay-document-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #172033;
+        margin-bottom: 3px;
+    }
+
+    .pay-document-subtitle {
+        font-size: 0.84rem;
+        color: #64748b;
+    }
+
+    .pay-net-pay {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #172033;
+    }
+
+    .pay-preview-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #172033;
+        margin-top: 12px;
+        margin-bottom: 8px;
+    }
+
+    /* --------------------------------------------------------
+       EA Form / document note
+    -------------------------------------------------------- */
+
+    .pay-document-note {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px 13px;
+        color: #475569;
+        font-size: 0.86rem;
+        margin-top: 12px;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
-if not my_ea_forms:
-    st.caption(
-        "No EA Form uploaded by HR yet."
-    )
+# PAGE INTRO
+st.html(
+    """
+    <div class="pay-welcome">
+
+        <div class="pay-welcome-title">
+            Your Pay & Documents
+        </div>
+
+        <div class="pay-welcome-text">
+            View your payslips and annual tax documents
+            in one place.
+        </div>
+
+    </div>
+    """
+)
+
+# PAYSLIP YEAR SELECTION
+st.subheader("Payslips")
+current_year = date.today().year            # Determine available years
+
+payslip_years = []
+if (not my_payslips.empty and "month" in my_payslips.columns):
+    my_payslips["_year"] = (my_payslips["month"].apply(get_payslip_year))
+    payslip_years = sorted(my_payslips["_year"].dropna().astype(int).unique().tolist(),reverse=True,)
+
+# Always keep current year available
+if not payslip_years:
+    payslip_years = [current_year]
+
+selected_payslip_year = st.selectbox("Year", payslip_years, index=0, key="payslip_year",)
+
+# FILTER PAYSLIPS
+if not my_payslips.empty:
+    selected_payslips = my_payslips[my_payslips["_year"] == selected_payslip_year].copy()
 else:
+    selected_payslips = pd.DataFrame()
+
+# SORT PAYSLIPS
+if not selected_payslips.empty:
+    selected_payslips["_sort_date"] = (selected_payslips["month"].apply(get_payslip_sort_date))
+    selected_payslips = (selected_payslips.sort_values("_sort_date", ascending=False,))
+
+# CALCULATE PAYSLIP SUMMARY
+if not selected_payslips.empty:
+    total_net_pay = (pd.to_numeric(selected_payslips["net_pay"], errors="coerce").fillna(0).sum())
+    latest_payslip = (selected_payslips.iloc[0])
+    latest_month = format_payslip_month(latest_payslip["month"])
+    payslip_count = len(selected_payslips)
+else:
+    total_net_pay = 0
+    latest_month = "—"
+    payslip_count = 0
+
+# KPI CARDS
+st.markdown(
+            """
+            <style>
+            .kpi-card {
+                background: white;
+                border: 1px solid #E5E7EB;
+                border-radius: 12px;
+                padding: 18px 20px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+                min-height: 105px;
+            }
+
+            .kpi-label {
+                font-size: 14px;
+                color: #6B7280;
+                font-weight: 500;
+                margin-bottom: 6px;
+            }
+
+            .kpi-value {
+                font-size: 28px;
+                font-weight: 700;
+                color: #111827;
+                line-height: 1.2;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">Net Pay</div>
+            <div class="kpi-value">{format_money(total_net_pay)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,)
+with c2:
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">Latest Payslip</div>
+            <div class="kpi-value">{latest_month}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,)
+with c3:
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">Payslips</div>
+            <div class="kpi-value">{payslip_count}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,)
+
+# PAYSLIP HISTORY
+st.markdown("### Payslip History")
+if selected_payslips.empty:
+    st.info(f"No payslips available for " f"{selected_payslip_year}.")
+    st.caption(
+        "Your payslip will appear here once "
+        "it has been uploaded by HR.")
+else:
+    for idx, (_, row) in enumerate(selected_payslips.iterrows()):
+        payslip = row.to_dict()
+        month_display = format_payslip_month(payslip.get("month"))
+        net_pay = format_money(payslip.get("net_pay", 0))
+        payslip_id = payslip.get("payslip_id", idx)
+
+        # GENERATE PDF
+        try:
+            pdf_bytes = (generate_payslip_pdf_bytes(my_employee, payslip,))
+        except Exception:
+            pdf_bytes = None
+
+        # PAYSLIP CARD
+        with st.container(border=True):
+            col_info, col_amount, col_action = (st.columns([3.2, 2, 2]))
+
+            # Payslip Information
+            with col_info:
+                st.caption("Monthly Payslip")
+                st.markdown(
+                    f"""
+                    <div class="pay-document-title">
+                        {month_display}
+                    </div>
+                    """, unsafe_allow_html=True,)
+
+            # Net Pay
+            with col_amount:
+                st.caption("Net Pay")
+                st.markdown(
+                    f"""
+                    <div class="pay-net-pay">
+                        {net_pay}
+                    </div>
+                    """, unsafe_allow_html=True,)
+
+            # Action Buttons
+            with col_action:
+                if pdf_bytes is None:
+                    st.error("Unable to generate PDF.")
+                else:
+                    button_col1, button_col2 = (st.columns(2))
+
+                    # PREVIEW BUTTON
+                    with button_col1:
+                        preview_key = (f"preview_" f"{payslip_id}_" f"{selected_payslip_year}")
+                        preview = st.button("Preview", key = preview_key,use_container_width = True,)
+
+                    # DOWNLOAD BUTTON
+                    with button_col2:
+                        safe_name = str(my_employee.get("name", "Employee")).replace(" ", "_")
+                        file_name = (f"{safe_name}_" f"{payslip.get('month')}.pdf")
+
+                        st.download_button("Download", data = pdf_bytes, file_name = file_name,
+                            mime = "application/pdf", key = (f"payslip_dl_" f"{payslip_id}_" f"{selected_payslip_year}"),
+                            use_container_width=True,)
+
+            # PDF PREVIEW
+            preview_state_key = (f"show_preview_{payslip_id}")
+            if preview:
+                st.session_state[preview_state_key] = not st.session_state.get(preview_state_key, False)
+            if st.session_state.get(preview_state_key, False):
+                st.markdown(
+                    """
+                    <div class="pay-preview-title">
+                        Payslip Preview
+                    </div>
+                    """, unsafe_allow_html=True,)
+
+                # Convert PDF to Base64
+                pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+                pdf_display = f"""
+                <iframe
+                    src="data:application/pdf;base64,
+                    {pdf_base64}"
+                    width="100%"
+                    height="700"
+                    type="application/pdf"
+                    style="
+                        border:1px solid #dfe7f5;
+                        border-radius:12px;
+                        margin-top:8px;
+                        background:#ffffff;
+                    "
+                >
+                </iframe>
+                """
+                st.markdown(pdf_display, unsafe_allow_html=True,)
+
+st.divider()
+
+# EA FORM
+st.subheader("EA Form")
+st.caption("Download your annual EA Form uploaded by HR.")
+
+# LOAD EA FORMS
+try:
+    my_ea_forms = (get_ea_forms_for_employee(employee_id))
+except Exception:
+    my_ea_forms = []
+
+# DETERMINE EA YEARS
+ea_years = []
+for form in my_ea_forms:
+    try:
+        year_value = int(form.get("year"))
+        ea_years.append(year_value)
+    except Exception:
+        continue
+
+ea_years = sorted(list(set(ea_years)),reverse=True,)
+
+# EA FORM YEAR FILTER
+if not ea_years:
+    st.info("No EA Form uploaded by HR yet.")
+    st.caption(
+        "Your EA Form will appear here "
+        "once HR uploads it.")
+else:
+    selected_ea_year = st.selectbox("Year", ea_years, index = 0, key = "ea_year",)
+
+    # FILTER EA FORMS
+    selected_ea_forms = []
     for form in my_ea_forms:
+        try:
+            form_year = int(form.get("year"))
+        except Exception:
+            continue
 
-        year = str(form["year"])
-        uploaded_date = form.get(
-            "uploaded_date",
-            ""
-        )
+        if form_year == selected_ea_year:
+            selected_ea_forms.append(form)
 
-        storage_path = form.get(
-            "storage_path"
-        )
+    # DISPLAY EA FORM
+    if not selected_ea_forms:
+        st.info(f"No EA Form available for " f"{selected_ea_year}.")
+    else:
+        for idx, form in enumerate(selected_ea_forms):
+            year = str(form.get("year", selected_ea_year,))
+            uploaded_date = form.get("uploaded_date", "",)
+            storage_path = form.get("storage_path")
 
-        col1, col2 = st.columns(
-            [3, 1]
-        )
+            # EA FORM CARD
+            with st.container(border=True):
+                col_info, col_action = (st.columns([3.5, 2.2]))
 
-        # --------------------------------
-        # EA Form information
-        # --------------------------------
+                # EA FORM INFORMATION
+                with col_info:
+                    st.markdown(
+                        f"""
+                        <div class="pay-document-title">
+                            EA Form {year}
+                        </div>
+                        """, unsafe_allow_html=True,)
 
-        with col1:
+                    if uploaded_date:
+                        st.caption(f"Uploaded: {uploaded_date}")
+                    else:
+                        st.caption("Annual Income Tax Statement")
 
-            st.write(
-                f"**EA Form {year}** "
-                f"— uploaded {uploaded_date}"
-            )
+                # EA FORM ACTIONS
+                with col_action:
+                    if not storage_path:
+                        st.error("File unavailable.")
+                    else:
+                        try:
+                            pdf_bytes = (download_ea_form_bytes(storage_path))
+                            employee_name = str(my_employee.get("name", "Employee")).replace(" ", "_")
+                            file_name = (f"EA_{year}_" f"{employee_name}.pdf")
+                            ea_preview_key = (f"ea_preview_" f"{employee_id}_" f"{year}_" f"{idx}")
+                            ea_download_key = (f"ea_dl_" f"{employee_id}_" f"{year}_" f"{idx}")
+                            button_col1, button_col2 = (st.columns(2))
 
-        # --------------------------------
-        # Download
-        # --------------------------------
+                            # EA PREVIEW
+                            with button_col1:
+                                ea_preview = st.button("Preview", key = ea_preview_key, use_container_width = True,)
 
-        with col2:
+                            # EA DOWNLOAD
+                            with button_col2:
+                                st.download_button("Download", data = pdf_bytes,
+                                    file_name = file_name, mime = "application/pdf",
+                                    key = ea_download_key, use_container_width = True,)
 
-            if not storage_path:
+                            # EA PREVIEW DISPLAY
+                            ea_preview_state_key = (f"show_ea_preview_" f"{employee_id}_" f"{year}_" f"{idx}")
+                            if ea_preview:
+                                st.session_state[ea_preview_state_key] = not st.session_state.get(ea_preview_state_key, False)
+                            if st.session_state.get(ea_preview_state_key,False):
+                                st.markdown(
+                                    """
+                                    <div class="
+                                        pay-preview-title
+                                    ">
+                                        EA Form Preview
+                                    </div>
+                                    """,unsafe_allow_html=True,)
 
-                st.error(
-                    "File path unavailable."
-                )
+                                ea_pdf_base64 = (base64.b64encode(pdf_bytes).decode("utf-8"))
+                                ea_pdf_display = f"""
+                                <iframe
+                                    src="data:application/pdf;base64,
+                                    {ea_pdf_base64}"
+                                    width="100%"
+                                    height="700"
+                                    type="application/pdf"
+                                    style="
+                                        border:1px solid #dfe7f5;
+                                        border-radius:12px;
+                                        margin-top:8px;
+                                        background:#ffffff;
+                                    "
+                                >
+                                </iframe>
+                                """
+                                st.markdown(ea_pdf_display, unsafe_allow_html = True,)
 
-            else:
+                        except Exception:
+                            st.error("Couldn't fetch file.")
 
-                try:
-
-                    pdf_bytes = (
-                        download_ea_form_bytes(
-                            storage_path
-                        )
-                    )
-
-                    st.download_button(
-                        "Download",
-                        data=pdf_bytes,
-                        file_name=(
-                            f"EA_{year}_"
-                            f"{my_employee['name']}.pdf"
-                        ),
-                        mime="application/pdf",
-                        key=(
-                            f"ea_dl_"
-                            f"{st.session_state['employee_id']}_"
-                            f"{year}"
-                        ),
-                        use_container_width=True,
-                    )
-
-                except Exception:
-
-                    st.error(
-                        "Couldn't fetch file."
-                    )
-
+# FOOTER NOTE
+st.markdown(
+    """
+    <div class="pay-document-note">
+        💡 <strong>Need help?</strong>
+        Contact HR if your payslip or EA Form is missing.
+    </div>
+    """, unsafe_allow_html=True,)
