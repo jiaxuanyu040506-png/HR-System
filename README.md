@@ -1,110 +1,206 @@
-# HR System (Employee · Leave · Payroll · Attendance · Performance)
+# HR System
 
-Internal HR system for a ~20-person company, replacing Excel, WhatsApp, and paper-based processes.
+HR System is an internal HR and employee management platform built for small organizations that still rely on spreadsheets, manual approvals, and shared document workflows. The goal is to centralize employee records, leave tracking, attendance, payroll, performance monitoring, and HR document handling in one system.
 
-- **Frontend + Backend**: Streamlit (Python) — one codebase, no separate API server
-- **Data storage**: Google Sheets (read/write via a service account)
-- **File storage**: Google Drive (Shared Drive) — used for EA Form PDFs
-- **Deployment**: Streamlit Community Cloud (or any host that runs `streamlit run app.py`)
+The application is built with Python and Streamlit, and it uses Google Sheets as the primary operational data source. Employee documents such as MC files, EA forms, and payslips are stored in Supabase Storage using a private bucket structure.
 
 ---
 
-## Modules
+## Overview
 
-| Module | What it does |
+The system is structured around two main areas:
+
+- HR System: company-wide admin functions
+- My Workspace: employee self-service portal
+
+This allows HR administrators to manage the company while employees can view their own personal data, apply leave, access payslips, and manage profile-related actions.
+
+---
+
+## Core Modules
+
+### Employee Management
+- Add, edit, and manage employee records
+- Maintain status, role, department, and bank / identity information
+- Support first-time account creation and login setup
+- Allow controlled employee resignation and deletion workflows
+
+### Leave Management
+- Submit leave requests
+- Approve and reject leave applications
+- Track leave balances by year
+- Support public holidays and special holidays
+- Handle annual, medical, unpaid, and special leave logic
+- Apply probation-aware and prorated leave entitlement rules
+
+### Attendance
+- Auto-calculate presence, leave, holiday, and rest-day status
+- Allow HR to input manual attendance exceptions such as Absent, Late, and Half Day
+- Display employee and company-wide attendance views
+- Export attendance records to Excel
+
+### Payroll
+- Generate monthly payslip records
+- Support basic salary, allowance, bonus, BIK, unpaid leave deduction, and manual PCB input
+- Calculate EPF, SOCSO, EIS, and SKBBK contributions
+- Produce PDF payslips and retain historical payroll information
+
+### Performance Tracking
+- Record work completion against company or client assignments
+- Track due dates and completion status
+- View employee performance summaries and task counts
+
+### HR Document Management
+- Upload and manage employee MC files, EA forms, and related HR documents
+- Store files in a private Supabase Storage bucket
+- Organize files by document type and employee ID
+- Restrict document access based on employee role and permissions
+
+---
+
+## User Roles
+
+### HR Admin
+HR administrators have access to company-wide functions, including:
+- Employee records and onboarding
+- Leave approvals
+- Attendance exceptions and reporting
+- Payroll and payslip generation
+- Performance monitoring
+- HR document management
+- Reports and dashboard summaries
+
+### Employee
+Employees can access:
+- Dashboard
+- Leave application and history
+- Payslips
+- Attendance overview
+- Profile information and password change
+- Accessible HR documents
+
+---
+
+## Technology Stack
+
+| Component | Technology |
 |---|---|
-| **Employee Management** | Employee directory, add/edit records, department, custom Employee IDs, cascading delete (removes all linked leave/payslip/attendance/performance data) |
-| **Leave Management** | Apply/approve leave, leave calendar (company-wide), prorated annual/medical entitlement (tenure-based, probation-aware), auto-convert to Unpaid when annual balance is exhausted, leave summary charts |
-| **Attendance** | Daily attendance derived automatically (Present/Rest Day/Public Holiday/On Leave) with HR-marked exceptions (Absent/Late/Half Day); monthly grid view for all employees; Excel export (single month or full year, one sheet per month) |
-| **Payroll** | Auto-calculates EPF / SOCSO / SKBBK (togglable per government policy) / EIS from official rate tables; PCB entered manually; generates a PDF payslip matching the company's paper format |
-| **Performance** | Logs which employee completed work for which client/company, on-time vs late, with a "who did the most" chart |
-| **EA Form** | HR uploads each employee's annual EA Form (income statement) PDF; employees download it from their own Payslip page |
-| **Reports** | Employee / Leave / Payroll summaries with CSV export |
-| **My Profile** | Personal + employment details, change password |
-
-Two sidebar sections once logged in:
-- **HR System** (hr_admin only): company-wide admin tools
-- **My Workspace**: personal self-service tools — shown to everyone, including HR admins (an HR admin is also an employee and needs to apply their own leave, view their own payslip, etc.)
+| Frontend | Streamlit |
+| Backend | Python |
+| Primary data store | Google Sheets |
+| Service account auth | Google Cloud IAM / service accounts |
+| Document storage | Supabase Storage |
+| PDF generation | fpdf2 |
+| Excel export | OpenPyXL |
+| Password hashing | bcrypt |
+| Deployment | Streamlit-compatible hosting |
 
 ---
 
 ## Project Structure
 
-```
-hr_system/
-├── app.py                        # Login, password reset, then routes to the right dashboard
+```text
+LH_SYSTEM/
+├── app.py
 ├── requirements.txt
-├── .streamlit/
-│   └── secrets.toml.example      # Copy to secrets.toml and fill in (see QUICK_START.md)
-├── pages/
-│   ├── 0_Dashboard.py            # My Workspace > Dashboard (personal view, everyone)
-│   ├── 1_Employee_Management.py
-│   ├── 2_Leave_Management.py     # HR-side: Approval / Calendar / Employee History / Record Leave
-│   ├── 4_My_Profile.py
-│   ├── 5_Payroll_Management.py   # Generate Payslip / Payroll History / Upload EA Form
-│   ├── 6_Pay.py                  # My Workspace > My Payslips (+ EA Form download)
-│   ├── 7_Reports.py
-│   ├── 8_Time.py                 # My Workspace > My Leave (Apply / Calendar / History)
-│   ├── 9_HR_Overview.py          # HR System > Dashboard (company-wide view)
-│   ├── 10_Performance.py
-│   └── 11_Attendance.py
-├── utils/
-│   ├── sheets_client.py          # ONLY place that talks to Google Sheets directly
-│   ├── drive_client.py           # Google Drive upload/download (EA Forms)
-│   ├── auth.py                   # Login, password hashing, role checks
-│   ├── ui.py                     # Shared CSS + the custom sidebar (render_nav_sidebar)
-│   ├── dashboard.py               # render_hr_dashboard() / render_personal_dashboard()
-│   ├── leave_calc.py              # Leave request/approval logic, balance tracking
-│   ├── leave_rules.py             # Tenure brackets, proration, probation, public holidays
-│   ├── attendance.py              # Daily attendance derivation + monthly/yearly grids
-│   ├── performance.py             # Company/task performance tracking
-│   ├── payroll_calc.py            # EPF/SOCSO/SKBBK/EIS lookup + payslip calculation
-│   ├── pdf_generator.py           # Payslip PDF (in-memory, never saved to disk)
-│   ├── ea_forms.py                # EA Form upload/download records
-│   ├── employee_lifecycle.py      # Cascading delete for an employee
-│   ├── date_utils.py              # Tolerant date parsing (Google Sheets returns varied formats)
-│   └── excel_export.py            # Attendance grid -> downloadable .xlsx
-├── NOTES.local.md                 # Personal dev notes — NOT committed to Git
+├── README.md
 ├── QUICK_START.md
-└── README.md                      # This file
+├── CHANGELOG.md
+├── generate_hash.py
+├── .streamlit/
+│   ├── secrets.toml.example
+├── pages/
+│   ├── 0_Dashboard.py
+│   ├── 1_Employee_Management.py
+│   ├── 2_Leave_Management.py
+│   ├── 3_Payslip_Management.py
+│   ├── 4_My_Profile.py
+│   ├── 5_Payroll_Management.py
+│   ├── 6_Pay.py
+│   ├── 7_Reports.py
+│   ├── 8_Time.py
+│   ├── 9_HR_Overview.py
+│   ├── 10_Performance.py
+│   ├── 11_Attendance.py
+│   └── 12_Public_Holidays.py
+├── utils/
+│   ├── attendance.py
+│   ├── auth.py
+│   ├── dashboard.py
+│   ├── date_utils.py
+│   ├── drive_client.py
+│   ├── ea_forms.py
+│   ├── employee_lifecycle.py
+│   ├── excel_export.py
+│   ├── leave_attachment.py
+│   ├── leave_calc.py
+│   ├── leave_rules.py
+│   ├── payroll_calc.py
+│   ├── pdf_generator.py
+│   ├── performance.py
+│   ├── sheets_client.py
+│   ├── supabase_client.py
+│   ├── ui.py
+│   └── __init__.py
+└── .gitignore
 ```
 
 ---
 
-## Google Sheets Tabs Required
+## Getting Started
 
-**Main database** (`HR_System_Database`):
+For the full setup flow and data model instructions, see [QUICK_START.md](QUICK_START.md).
 
-| Tab | Key columns |
-|---|---|
-| `Employees` | employee_id, name, email, phone, department, address, date_of_birth, join_date, income_tax_no, epf_no, status, admin_email, bank_account, password_hash, force_password_reset, role |
-| `LeaveRequests` | request_id, employee_id, employee_name, leave_type, start_date, end_date, days, session, reason, status, approved_by, submit_date |
-| `LeaveBalance` | employee_id, year, annual_total, annual_used, medical_total, medical_used, unpaid_used |
-| `Payslips` | payslip_id, employee_id, employee_name, month, basic_salary, allowance, epf_employee, epf_employer, socso_employee, socso_employer, skbbk, eis_employee, pcb, net_pay |
-| `Companies` | company_name, category, company_type |
-| `PerformanceRecords` | record_id, company_name, employee_id, employee_name, due_date, completion_date, status |
-| `Attendance` | employee_id, employee_name, date, status, remarks *(only stores exceptions — everything else is auto-derived)* |
-| `EAForms` | employee_id, employee_name, year, drive_file_id, uploaded_date |
+Typical local startup:
 
-**Separate file** (`SOCSO_EPF_RateConfig`): `SOCSO`, `EPF`, `EPF_60` tabs — cleaned official statutory rate tables (see QUICK_START.md for the expected column format).
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
+```
 
 ---
 
-## Security Notes
+## Configuration
 
-- `credentials/`, `.streamlit/secrets.toml`, and `NOTES.local.md` are all in `.gitignore` — never force-commit them.
-- Passwords are stored as bcrypt hashes, never plaintext.
-- Bank account and other sensitive fields are only fully visible to the `hr_admin` role.
-- The Google service account only has `drive.file` scope (access to files it creates itself), not full Drive access.
+The app expects a local secrets file at:
+
+```text
+.streamlit/secrets.toml
+```
+
+That file should include the required Google service account credentials and the Supabase settings used for employee document storage, including:
+
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+
+Do not commit the real secrets file to version control.
 
 ---
 
-## Known Limitations (by design, not oversights)
+## Security and Operational Notes
+- Keep all API keys and credentials out of Git
+- Restrict employee access via role-based logic
+- Use strong password hashing and reset flow
+- Review statutory payroll rules before going live
+- Use a controlled internal environment for employee and payroll data
 
-- **PCB (monthly tax deduction)** is entered manually by HR from LHDN's official e-PCB calculator — not auto-computed. Full automated PCB requires tracking each employee's marital status, children, and year-to-date income, which isn't built yet.
-- **Leave attachments** (file uploads on the Apply Leave form) aren't persisted anywhere yet — needs Drive integration similar to EA Forms.
-- **Public holiday dates** for movable holidays (Chinese New Year, Hari Raya, etc.) are hardcoded per year in `leave_rules.py` and must be updated annually.
-- **Payroll Status / Payment Date** on the Payroll dashboard are placeholders — there's no real approval/release workflow yet.
-- Reports are CSV exports, not formatted printable PDF reports.
+---
 
-See `SESSION.md` for the full development history and what's planned next.
+## Current Status
+
+This project is a functioning internal HR system for day-to-day HR operations, with ongoing refinement around policy rules, file handling, and automation improvements.
+
+---
+
+## Documentation
+
+- [QUICK_START.md](QUICK_START.md): environment setup, Google Cloud configuration, spreadsheet structure, and deployment guidance
+- [CHANGELOG.md](CHANGELOG.md): feature history and release notes
+
+---
+
+## License
+
+This project is intended for internal company use and is not currently distributed as a public software product.
