@@ -38,6 +38,7 @@ Tenure-based entitlement and working-day calculation (excluding weekends
 from __future__ import annotations
 
 import uuid
+import pandas as pd
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from utils.sheets_client import read_table, append_row, update_row, delete_row, get_row
@@ -59,14 +60,127 @@ HOSPITALIZATION_MAX_CONTINUOUS_DAYS = 60
 # Balance: read / init / recalculate
 # ============================================================
 
-def get_leave_balance(employee_id: str, year: int) -> dict | None:
-    df = read_table("LeaveBalance")
+def get_leave_usage(employee_id: str, year: int, include_pending: bool = False) -> dict[str, float]:
+    """Return approved leave usage for a specific employee/year.
+
+    LeaveRequests is the source of truth. Pending and rejected requests do not
+    contribute to the used days calculation.
+
+    For Annual leave, a request may be split across Annual and Unpaid when the
+    employee has limited annual balance remaining. Example: AL remaining = 0.5,
+    request = 1.0 -> annual_used = 0.5, unpaid_used = 0.5.
+    """
+    df = read_table("LeaveRequests")
+    usage = {
+        "annual_used": 0.0,
+        "medical_used": 0.0,
+        "unpaid_used": 0.0,
+    }
+
     if df.empty:
+        return usage
+
+    filtered = df[df["employee_id"].astype(str) == str(employee_id)].copy()
+    if filtered.empty:
+        return usage
+
+    if not include_pending:
+        filtered = filtered[filtered["status"].astype(str).str.lower() == "approved"]
+
+    employee = get_row("Employees", {"employee_id": employee_id})
+    annual_total = 0.0
+    if employee is not None:
+        annual_total = get_prorated_annual_entitlement(employee["join_date"], year)
+
+    annual_used_so_far = 0.0
+
+    for _, row in filtered.iterrows():
+        try:
+            start_date = parse_date(row["start_date"])
+            end_date = parse_date(row["end_date"])
+        except Exception:
+            continue
+
+        if start_date.year != year and end_date.year != year:
+            continue
+
+        leave_type = str(row.get("leave_type", "")).strip()
+        days = float(row.get("days", 0) or 0)
+
+        if leave_type == "Annual":
+            annual_used, unpaid_days = split_annual_leave_to_unpaid(days, annual_total - annual_used_so_far)
+            usage["annual_used"] += annual_used
+            usage["unpaid_used"] += unpaid_days
+            annual_used_so_far += annual_used
+        elif leave_type == "Medical":
+            usage["medical_used"] += days
+        elif leave_type == "Unpaid":
+            usage["unpaid_used"] += days
+
+    return usage
+
+
+def get_leave_summary(employee_id: str, year: int, include_pending: bool = False) -> dict:
+    """Return leave entitlement and usage derived from the current rules.
+
+    This keeps the calculation centralized and ensures each page consumes the same
+    annual/medical/unpaid totals and used values.
+    """
+    employee = get_row("Employees", {"employee_id": employee_id})
+    if employee is None:
+        return {
+            "employee_id": employee_id,
+            "year": year,
+            "annual_total": 0.0,
+            "annual_used": 0.0,
+            "annual_remaining": 0.0,
+            "medical_total": 0.0,
+            "medical_used": 0.0,
+            "medical_remaining": 0.0,
+            "unpaid_used": 0.0,
+        }
+
+    annual_total = get_prorated_annual_entitlement(employee["join_date"], year)
+    medical_total = get_prorated_medical_entitlement(employee["join_date"], year)
+    usage = get_leave_usage(employee_id, year, include_pending=include_pending)
+
+    annual_used = usage["annual_used"]
+    medical_used = usage["medical_used"]
+    unpaid_used = usage["unpaid_used"]
+
+    return {
+        "employee_id": employee_id,
+        "year": year,
+        "annual_total": annual_total,
+        "annual_used": annual_used,
+        "annual_remaining": annual_total - annual_used,
+        "medical_total": medical_total,
+        "medical_used": medical_used,
+        "medical_remaining": medical_total - medical_used,
+        "unpaid_used": unpaid_used,
+    }
+
+
+def get_leave_balance(employee_id: str, year: int) -> dict | None:
+    """Compatibility wrapper preserving the old API while using LeaveRequests as the source of truth."""
+    employee = get_row("Employees", {"employee_id": employee_id})
+    if employee is None:
         return None
-    match = df[(df["employee_id"] == employee_id) & (df["year"].astype(str) == str(year))]
-    if match.empty:
-        return None
-    return match.iloc[0].to_dict()
+
+    summary = get_leave_summary(employee_id, year)
+    balance_row = read_table("LeaveBalance")
+    if not balance_row.empty:
+        match = balance_row[(balance_row["employee_id"].astype(str) == str(employee_id)) & (balance_row["year"].astype(str) == str(year))]
+        if not match.empty:
+            current = match.iloc[0].to_dict()
+            current["annual_total"] = summary["annual_total"]
+            current["annual_used"] = summary["annual_used"]
+            current["medical_total"] = summary["medical_total"]
+            current["medical_used"] = summary["medical_used"]
+            current["unpaid_used"] = summary["unpaid_used"]
+            return current
+
+    return summary
 
 
 def init_year_balance(employee_id: str, year: int):
@@ -220,7 +334,12 @@ def record_leave_request(employee_id: str, leave_type: str, start_date: date,
     })
 
     if status == "Approved":
-        _apply_approval_to_balance(employee_id, leave_type, days, start_date.year)
+        effective_type = _apply_approval_to_balance(employee_id, leave_type, days, start_date.year)
+        if effective_type != leave_type:
+            update_row("LeaveRequests", {"request_id": request_id}, {
+                "leave_type": effective_type,
+                "reason": f"{reason} (auto-converted to Unpaid: no annual leave left)".strip(),
+            })
 
     return request_id, days
 
@@ -388,7 +507,7 @@ def get_all_requests() -> list[dict]:
 
 
 # Updated 7 Aug, 2026 - Added month filtering based on actual leave start/end dates
-def _request_matches_month(row, year: int, month: int) -> bool:
+def _request_matches_month(row, year: int, month: int | None = None) -> bool:
     """
     Return True if the request's leave period overlaps the given year/month.
     This is based on the actual leave dates (start_date / end_date),
@@ -399,6 +518,9 @@ def _request_matches_month(row, year: int, month: int) -> bool:
         end_date = parse_date(row["end_date"])
     except Exception:
         return False
+
+    if month is None:
+        return start_date.year <= year <= end_date.year
 
     month_start = date(year, month, 1)
     if month == 12:
@@ -669,32 +791,30 @@ def get_monthly_approved_leave_headcount(year: int | None = None) -> dict[str, i
 
 
 def get_employee_leave_summaries(year: int | None = None) -> list[dict]:
-    """Per-employee annual/medical/unpaid leave usage and remaining balances."""
+    """Per-employee leave summary computed from LeaveRequests.
+
+    LeaveRequests is the source of truth. LeaveBalance is treated as a derived
+    cache / summary table and should not be used as the primary input for business
+    logic or page-level display values.
+    """
     if year is None:
         year = date.today().year
 
     employees = read_table("Employees")
-    balances = read_table("LeaveBalance")
     if employees.empty:
         return []
 
-    balance_rows = {}
-    if not balances.empty:
-        balance_rows = {
-            (str(row["employee_id"]), int(row["year"])): row
-            for _, row in balances.iterrows()
-        }
-
     summaries = []
+
     for _, employee in employees.iterrows():
         emp_id = str(employee["employee_id"])
-        balance = balance_rows.get((emp_id, year))
+        summary = get_leave_summary(emp_id, year)
 
-        annual_total = float(balance["annual_total"]) if balance is not None else 0.0
-        annual_used = float(balance["annual_used"]) if balance is not None else 0.0
-        medical_total = float(balance["medical_total"]) if balance is not None else 0.0
-        medical_used = float(balance["medical_used"]) if balance is not None else 0.0
-        unpaid_used = float(balance.get("unpaid_used", 0)) if balance is not None else 0.0
+        annual_used = summary["annual_used"]
+        medical_used = summary["medical_used"]
+        unpaid_used = summary["unpaid_used"]
+        annual_total = summary["annual_total"]
+        medical_total = summary["medical_total"]
 
         summaries.append({
             "employee_id": emp_id,
@@ -702,7 +822,7 @@ def get_employee_leave_summaries(year: int | None = None) -> list[dict]:
             "department": employee.get("department", ""),
             "annual_total": annual_total,
             "annual_used": annual_used,
-            "annual_remaining": annual_total - annual_used,  # can be negative — allowed by design
+            "annual_remaining": annual_total - annual_used,
             "medical_total": medical_total,
             "medical_used": medical_used,
             "medical_remaining": medical_total - medical_used,
@@ -711,6 +831,70 @@ def get_employee_leave_summaries(year: int | None = None) -> list[dict]:
         })
 
     return summaries
+
+def normalize_approved_leave_requests_for_year(year: int):
+    """Normalize approved requests so the saved leave_type reflects current annual split logic.
+
+    This matters when historical rows were saved as plain Unpaid even though an Annual
+    request should have been split against remaining annual leave. The stored request type
+    should not be trusted as the business truth when recalculating balances.
+    """
+    requests = read_table("LeaveRequests")
+    if requests.empty:
+        return
+
+    approved = requests[(requests["status"].astype(str).str.lower() == "approved")].copy()
+    if approved.empty:
+        return
+
+    approved["_start_year"] = approved["start_date"].apply(lambda v: parse_date(v).year if str(v).strip() else None)
+    approved = approved[approved["_start_year"] == year].copy()
+
+    for _, req in approved.iterrows():
+        req_id = str(req.get("request_id", ""))
+        if not req_id:
+            continue
+
+        employee_id = str(req.get("employee_id", ""))
+        employee = get_row("Employees", {"employee_id": employee_id})
+        if employee is None:
+            continue
+
+        annual_total = get_prorated_annual_entitlement(employee["join_date"], year)
+        if str(req.get("leave_type", "")).strip() not in {"Annual", "Unpaid", "Medical"}:
+            continue
+
+        # Recompute the actual annual/unpaid split from the current rules, using only
+        # the approved requests for this employee/year in date order.
+        emp_requests = approved[approved["employee_id"].astype(str) == employee_id].sort_values(
+            by=["start_date", "end_date"], kind="mergesort"
+        )
+
+        annual_used_so_far = 0.0
+        for _, row in emp_requests.iterrows():
+            row_id = str(row.get("request_id", ""))
+            if row_id == req_id:
+                days = float(row.get("days", 0) or 0)
+                leave_type = str(row.get("leave_type", "")).strip()
+
+                if leave_type == "Annual":
+                    annual_applied, unpaid_applied = split_annual_leave_to_unpaid(days, annual_total - annual_used_so_far)
+                    if annual_applied == 0 and unpaid_applied > 0:
+                        update_row("LeaveRequests", {"request_id": req_id}, {"leave_type": "Unpaid"})
+                    elif annual_applied > 0 and unpaid_applied > 0:
+                        update_row("LeaveRequests", {"request_id": req_id}, {"leave_type": "Annual"})
+                elif leave_type == "Unpaid":
+                    # Unpaid requests stay unpaid unless the historical row was incorrectly
+                    # saved as Unpaid for an Annual request that still had annual balance.
+                    annual_applied, unpaid_applied = split_annual_leave_to_unpaid(days, annual_total - annual_used_so_far)
+                    if annual_applied > 0:
+                        update_row("LeaveRequests", {"request_id": req_id}, {"leave_type": "Annual"})
+                annual_used_so_far += max(annual_applied if leave_type == "Annual" else 0.0, 0.0)
+                break
+
+            if str(row.get("leave_type", "")).strip() == "Annual":
+                days = float(row.get("days", 0) or 0)
+                annual_used_so_far += split_annual_leave_to_unpaid(days, annual_total - annual_used_so_far)[0]
 
 # Added 23 July, 2026
 def rebuild_all_leave_balances(year: int | None = None):
@@ -730,10 +914,12 @@ def rebuild_all_leave_balances(year: int | None = None):
 
     from datetime import date
     import pandas as pd
-    from utils.sheets_client import read_table, append_row, delete_row
+    from utils.sheets_client import read_table, append_row, delete_row, clear_sheet_caches
 
     if year is None:
         year = date.today().year
+
+    normalize_approved_leave_requests_for_year(year)
 
     employees = read_table("Employees")
     requests = read_table("LeaveRequests")
@@ -745,7 +931,7 @@ def rebuild_all_leave_balances(year: int | None = None):
     if requests.empty:
         approved_requests = pd.DataFrame()
     else:
-        approved_requests = requests[(requests["status"] == "Approved")]
+        approved_requests = requests[(requests["status"].astype(str).str.lower() == "approved")]
 
     new_balances = []
 
@@ -753,18 +939,18 @@ def rebuild_all_leave_balances(year: int | None = None):
 
         employee_id = str(employee["employee_id"])
 
+        annual_total = get_prorated_annual_entitlement(employee["join_date"], year)
+        medical_total = get_prorated_medical_entitlement(employee["join_date"], year)
+
         annual_used = 0.0
         medical_used = 0.0
         unpaid_used = 0.0
+        annual_remaining = annual_total
 
-        # calculate usage from LeaveRequests
         if not approved_requests.empty:
-
             emp_requests = approved_requests[approved_requests["employee_id"].astype(str) == employee_id]
 
-            # only current year
             for _, req in emp_requests.iterrows():
-
                 try:
                     start_year = int(str(req["start_date"])[:4])
                 except Exception:
@@ -773,25 +959,18 @@ def rebuild_all_leave_balances(year: int | None = None):
                 if start_year != year:
                     continue
 
-                days = float(req.get("days", 0))
-
-                leave_type = req["leave_type"]
+                days = float(req.get("days", 0) or 0)
+                leave_type = str(req.get("leave_type", "")).strip()
 
                 if leave_type == "Annual":
-                    annual_used += days
-
+                    annual_applied, unpaid_applied = split_annual_leave_to_unpaid(days, annual_remaining)
+                    annual_used += annual_applied
+                    unpaid_used += unpaid_applied
+                    annual_remaining = max(annual_total - annual_used, 0.0)
                 elif leave_type == "Medical":
                     medical_used += days
-
                 elif leave_type == "Unpaid":
                     unpaid_used += days
-
-
-        # calculate entitlement using current rules
-        annual_total = get_prorated_annual_entitlement(employee["join_date"], year)
-
-        medical_total = get_prorated_medical_entitlement(employee["join_date"],year)
-
 
         new_balances.append({
             "employee_id": employee_id,
@@ -807,10 +986,7 @@ def rebuild_all_leave_balances(year: int | None = None):
             "unpaid_used": unpaid_used,
         })
 
-
-    # remove existing LeaveBalance data
     existing_balances = read_table("LeaveBalance")
-
     if not existing_balances.empty:
         for _, row in existing_balances.iterrows():
             delete_row(
@@ -821,10 +997,10 @@ def rebuild_all_leave_balances(year: int | None = None):
                 }
             )
 
-
-    # insert rebuilt balances
     for balance in new_balances:
         append_row(
             "LeaveBalance",
             balance
         )
+
+    clear_sheet_caches()

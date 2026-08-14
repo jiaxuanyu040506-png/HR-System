@@ -60,6 +60,7 @@ from utils.leave_rules import (
     get_holiday_info,
 )
 
+from utils.leave_calc import get_leave_summary
 from utils.date_utils import parse_date
 
 # STATUS DEFINITIONS
@@ -407,56 +408,26 @@ def get_monthly_summary(employee_id: str, employee_name: str, year: int, month: 
     return summary
 
 # YEARLY LEAVE SUMMARY
-def get_yearly_leave_summary( employee_id: str, year: int,) -> dict:
+def get_yearly_leave_summary(employee_id: str, year: int) -> dict:
+    """Return approved leave totals for the year using the centralized leave rules.
+
+    The attendance screen relies on this for AL / MC / UPL totals. Annual requests that
+    exceed the remaining annual balance are split into annual + unpaid using the same
+    business rule as the leave summary.
     """
-    Calculate approved leave usage for the year.
+    summary = get_leave_summary(employee_id, year)
 
-    Source:
-        LeaveRequests
+    annual_total = float(summary.get("annual_total", 0.0) or 0.0)
+    annual_used = float(summary.get("annual_used", 0.0) or 0.0)
+    unpaid_used = float(summary.get("unpaid_used", 0.0) or 0.0)
 
-    Example:
-
-        {
-            "AL": 5,
-            "MC": 2,
-            "UPL": 1,
-        }
-    """
-
-    requests = read_table("LeaveRequests")
-    if requests.empty:
-        return {}
-
-    required_columns = {"employee_id", "status", "start_date", "end_date", "leave_type",}
-    if not required_columns.issubset(requests.columns):
-        return {}
-
-    df = requests[(requests["employee_id"].astype(str) == str(employee_id)) & (requests["status"].astype(str) == "Approved")]
-    if df.empty:
-        return {}
-
-    summary = {}
-    for _, row in df.iterrows():
-        try:
-            start_date = parse_date(row["start_date"])
-            end_date = parse_date(row["end_date"])
-
-        except Exception:
-            continue
-
-        # Skip requests that don't overlap this year.
-        if (start_date.year != year and end_date.year != year):
-            continue
-
-        leave_type = str(row.get("leave_type", "",)).strip()
-        code = LEAVE_TYPE_CODES.get(leave_type, leave_type,)
-        try:
-            days = float(row.get("days", 0,) or 0)
-        except Exception:
-            days = 0.0
-
-        summary[code] = (summary.get(code, 0) + days)
-    return summary
+    result = {
+        "AL": annual_used,
+        "AL_remaining": max(annual_total - annual_used, 0.0),
+        "MC": float(summary.get("medical_used", 0.0) or 0.0),
+        "UPL": unpaid_used,
+    }
+    return result
 
 # REST DAY COLUMNS
 def get_rest_day_columns( year: int, month: int,) -> list[int]:

@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import date
 from utils.ui import inject_css, render_nav_sidebar
 from utils.auth import require_login, hash_password
-from utils.leave_calc import get_leave_balance, recalculate_year_balance, init_year_balance
+from utils.leave_calc import get_leave_summary, recalculate_year_balance, init_year_balance
 from utils.sheets_client import read_table, append_row, update_row, delete_row
 from utils.employee_lifecycle import delete_employee_and_all_data
 
@@ -195,7 +195,7 @@ with tab_edit:
 
         # Updated 17 July
         year = date.today().year
-        balance = get_leave_balance(employee["employee_id"], year)
+        summary = get_leave_summary(employee["employee_id"], year)
         st.html("<div style='height:18px'></div>")
 
         st.html(
@@ -211,154 +211,136 @@ with tab_edit:
             """
         )
 
-        if balance is None:
+        annual_total = float(summary["annual_total"])
+        annual_used = float(summary["annual_used"])
+        annual_remaining = (annual_total - annual_used)
+
+        medical_total = float(summary["medical_total"])
+        medical_used = float(summary["medical_used"])
+        medical_remaining = (medical_total - medical_used)
+
+        unpaid_used = float(summary.get("unpaid_used", 0))
+
+        # BALANCE CARDS
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            annual_progress = (max( 0, min(100, (annual_used / annual_total * 100) if annual_total > 0 else 0,),))
             st.html(
                 f"""
-                <div style="
-                    border:1px solid #fde68a;
-                    border-radius:12px;
-                    padding:14px 16px;
-                    background:#fffbeb;
-                    color:#92400e;
-                    font-size:0.9rem;
-                ">
-                    No leave balance found for {year}.
-                    The balance can be initialized when needed.
+                <div class="balance-card">
+
+                    <div class="balance-card-title">
+                        🏖️ Annual Leave
+                    </div>
+
+                    <div class="balance-number">
+                        {annual_remaining:g}
+                    </div>
+
+                    <div class="balance-label">
+                        days remaining
+                    </div>
+
+                    <div class="balance-detail">
+                        {annual_used:g} used
+                        ·
+                        {annual_total:g} total
+                    </div>
+
+                    <div class="balance-progress">
+                        <div style="
+                            width:{annual_progress:.1f}%;
+                            height:100%;
+                            background:#5b8def;
+                            border-radius:999px;
+                        "></div>
+                    </div>
+
                 </div>
                 """
             )
 
-        else:
-            annual_total = float(balance["annual_total"])
-            annual_used = float(balance["annual_used"])
-            annual_remaining = (annual_total - annual_used)
+        with b2:
+            medical_progress = (max(0, min(100, (medical_used / medical_total * 100) if medical_total > 0 else 0, ),))
+            st.html(
+                f"""
+                <div class="balance-card">
 
-            medical_total = float(balance["medical_total"])
-            medical_used = float(balance["medical_used"])
-            medical_remaining = (medical_total - medical_used)
-
-            unpaid_used = float(balance.get("unpaid_used", 0))
-            
-            # BALANCE CARDS
-            b1, b2, b3 = st.columns(3)
-            with b1:
-                annual_progress = (max( 0, min(100, (annual_used / annual_total * 100) if annual_total > 0 else 0,),))
-                st.html(
-                    f"""
-                    <div class="balance-card">
-
-                        <div class="balance-card-title">
-                            🏖️ Annual Leave
-                        </div>
-
-                        <div class="balance-number">
-                            {annual_remaining:g}
-                        </div>
-
-                        <div class="balance-label">
-                            days remaining
-                        </div>
-
-                        <div class="balance-detail">
-                            {annual_used:g} used
-                            ·
-                            {annual_total:g} total
-                        </div>
-
-                        <div class="balance-progress">
-                            <div style="
-                                width:{annual_progress:.1f}%;
-                                height:100%;
-                                background:#5b8def;
-                                border-radius:999px;
-                            "></div>
-                        </div>
-
+                    <div class="balance-card-title">
+                        🩺 Medical Leave
                     </div>
-                    """
-                )
 
-            with b2:
-                medical_progress = (max(0, min(100, (medical_used / medical_total * 100) if medical_total > 0 else 0, ),))
-                st.html(
-                    f"""
-                    <div class="balance-card">
-
-                        <div class="balance-card-title">
-                            🩺 Medical Leave
-                        </div>
-
-                        <div class="balance-number">
-                            {medical_remaining:g}
-                        </div>
-
-                        <div class="balance-label">
-                            days remaining
-                        </div>
-
-                        <div class="balance-detail">
-                            {medical_used:g} used
-                            ·
-                            {medical_total:g} total
-                        </div>
-
-                        <div class="balance-progress">
-                            <div style="
-                                width:{medical_progress:.1f}%;
-                                height:100%;
-                                background:#f28c8c;
-                                border-radius:999px;
-                            "></div>
-                        </div>
-
+                    <div class="balance-number">
+                        {medical_remaining:g}
                     </div>
-                    """
-                )
 
-            with b3:
-                st.html(
-                    f"""
-                    <div class="balance-card">
-
-                        <div class="balance-card-title">
-                            💼 Unpaid Leave
-                        </div>
-
-                        <div class="balance-number">
-                            {unpaid_used:g}
-                        </div>
-
-                        <div class="balance-label">
-                            days used
-                        </div>
-
-                        <div class="balance-detail">
-                            No annual entitlement
-                        </div>
-
-                        <div class="balance-progress">
-                            <div style="
-                                width:100%;
-                                height:100%;
-                                background:#94a3b8;
-                                border-radius:999px;
-                                opacity:0.55;
-                            "></div>
-                        </div>
-
+                    <div class="balance-label">
+                        days remaining
                     </div>
-                    """
-                )
 
-            if st.button("🔄 Recalculate this year's leave balance", key="recalc_balance_btn"):
-                recalculate_year_balance(employee["employee_id"], year)
-                st.success("Recalculated using the current entitlement rules.")
-                st.rerun()
-            st.caption(
-                "Use this if the annual/medical days shown look wrong — e.g. after the "
-                "proration or probation rules were updated, since existing balances "
-                "aren't recalculated automatically."
+                    <div class="balance-detail">
+                        {medical_used:g} used
+                        ·
+                        {medical_total:g} total
+                    </div>
+
+                    <div class="balance-progress">
+                        <div style="
+                            width:{medical_progress:.1f}%;
+                            height:100%;
+                            background:#f28c8c;
+                            border-radius:999px;
+                        "></div>
+                    </div>
+
+                </div>
+                """
             )
+
+        with b3:
+            st.html(
+                f"""
+                <div class="balance-card">
+
+                    <div class="balance-card-title">
+                        💼 Unpaid Leave
+                    </div>
+
+                    <div class="balance-number">
+                        {unpaid_used:g}
+                    </div>
+
+                    <div class="balance-label">
+                        days used
+                    </div>
+
+                    <div class="balance-detail">
+                        No annual entitlement
+                    </div>
+
+                    <div class="balance-progress">
+                        <div style="
+                            width:100%;
+                            height:100%;
+                            background:#94a3b8;
+                            border-radius:999px;
+                            opacity:0.55;
+                        "></div>
+                    </div>
+
+                </div>
+                """
+            )
+
+        if st.button("🔄 Recalculate this year's leave balance", key="recalc_balance_btn"):
+            recalculate_year_balance(employee["employee_id"], year)
+            st.success("Recalculated using the current entitlement rules.")
+            st.rerun()
+        st.caption(
+            "Use this if the annual/medical days shown look wrong — e.g. after the "
+            "proration or probation rules were updated, since existing balances "
+            "aren't recalculated automatically."
+        )
 
         st.divider()
         with st.expander("🗑️ Delete this employee record (testing / data-entry mistakes only)"):

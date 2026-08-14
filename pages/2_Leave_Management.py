@@ -28,10 +28,17 @@ try:
         get_pending_requests, get_all_pending_requests, get_all_requests,
         get_calendar_events, record_leave_request, approve_request, reject_request,
         delete_leave_request, get_monthly_approved_leave_headcount, get_employee_leave_summaries,
-        get_employee_monthly_leave_days,  get_employee_leave_type_days,
+        get_employee_monthly_leave_days,  get_employee_leave_type_days, get_leave_summary
     )
 except ImportError:
-    from utils.leave_calc import get_pending_requests, get_all_pending_requests, approve_request, reject_request, delete_leave_request
+    from utils.leave_calc import (
+        get_pending_requests,
+        get_all_pending_requests,
+        approve_request,
+        reject_request,
+        delete_leave_request,
+        get_leave_summary,
+    )
 
     def get_employee_monthly_leave_days(year: int | None = None):
         return []
@@ -75,49 +82,24 @@ except ImportError:
         if year is None:
             year = date.today().year
         employees = read_table("Employees")
-        balances = read_table("LeaveBalance")
         if employees.empty:
             return []
-        balance_rows = {}
-        if not balances.empty:
-            balance_rows = {(str(row["employee_id"]), int(row["year"])): row for _, row in balances.iterrows()}
+
         summaries = []
         for _, employee in employees.iterrows():
             emp_id = str(employee["employee_id"])
-            key = (emp_id, year)
-            balance = balance_rows.get(key)
-
-            annual_total = float(balance["annual_total"]) if balance is not None else 0.0
-            annual_used = float(balance["annual_used"]) if balance is not None else 0.0
-            # annual_remaining = annual_total - annual_used
-
-            medical_total = float(balance["medical_total"]) if balance is not None else 0.0
-            medical_used = float(balance["medical_used"]) if balance is not None else 0.0
-
-            unpaid_used = float(balance.get("unpaid_used", 0)) if balance is not None else 0.0
-
-            # sick_entitlement = 0.0
-            # medical_used = 0.0
-            # if balance is not None:
-            #     try:
-            #         sick_entitlement = float(get_sick_leave_entitlement(employee["join_date"]))
-            #         medical_used = max(sick_entitlement - sick_balance, 0.0)
-            #     except Exception:
-            #         sick_entitlement = sick_balance
-            #         medical_used = 0.0
+            summary = get_leave_summary(emp_id, year)
             summaries.append({
                 "employee_id": emp_id,
                 "employee_name": employee.get("name", ""),
                 "department": employee.get("department", ""),
-                "annual_total": annual_total,
-                "annual_used": annual_used,
-                "annual_remaining": annual_total - annual_used,
-                # "annual_remaining": annual_remaining,
-                "medical_total": medical_total,
-                "medical_used": medical_used,
-                "medical_remaining": medical_total - medical_used,
-                # "sick_balance": sick_balance,
-                "unpaid_used": unpaid_used,
+                "annual_total": summary["annual_total"],
+                "annual_used": summary["annual_used"],
+                "annual_remaining": summary["annual_remaining"],
+                "medical_total": summary["medical_total"],
+                "medical_used": summary["medical_used"],
+                "medical_remaining": summary["medical_remaining"],
+                "unpaid_used": summary["unpaid_used"],
                 "year": year,
             })
         return summaries

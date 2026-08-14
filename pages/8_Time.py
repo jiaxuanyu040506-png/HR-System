@@ -6,7 +6,7 @@ from utils.ui import inject_css, render_nav_sidebar
 from utils.auth import require_login
 from utils.leave_calc import (
     submit_leave_request,
-    get_leave_balance,
+    get_leave_summary,
     get_my_requests,
     init_year_balance,
     get_calendar_events,
@@ -36,19 +36,16 @@ employee_name = employee["name"]
 
 # LEAVE BALANCE
 year = date.today().year
-balance = get_leave_balance(employee_id, year,)
-if balance is None:
-    init_year_balance(employee_id, year,)
-    balance = get_leave_balance(employee_id, year,)
+summary = get_leave_summary(employee_id, year)
 
-# CALCULATE BALANCE
-annual_total = float(balance.get("annual_total", 0) or 0)
-annual_used = float(balance.get("annual_used", 0) or 0)
-annual_remaining = max(annual_total - annual_used, 0,)
+# CALCULATE BALANCE FROM CENTRALIZED LEAVE SUMMARY
+annual_total = float(summary.get("annual_total", 0) or 0)
+annual_used = float(summary.get("annual_used", 0) or 0)
+annual_remaining = max(annual_total - annual_used, 0)
 
-medical_total = float(balance.get("medical_total", 0) or 0)
-medical_used = float(balance.get("medical_used", 0) or 0)
-medical_remaining = max(medical_total - medical_used, 0,)
+medical_total = float(summary.get("medical_total", 0) or 0)
+medical_used = float(summary.get("medical_used", 0) or 0)
+medical_remaining = max(medical_total - medical_used, 0)
 
 # HELPER FUNCTIONS
 def format_days(value):

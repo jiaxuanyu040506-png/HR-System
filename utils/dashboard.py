@@ -23,7 +23,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from utils.sheets_client import read_table
-from utils.leave_calc import get_leave_balance, get_all_pending_requests, get_today_on_leave_count, \
+from utils.leave_calc import get_leave_summary, get_all_pending_requests, get_today_on_leave_count, \
     approve_request, reject_request, get_my_requests
 from utils.performance import get_completed_counts_by_employee, get_assigned_vs_completed, get_employee_company_list, get_employee_performance_summary, get_employee_late_companies
 
@@ -650,23 +650,14 @@ def render_personal_dashboard(role: str):
         pass
 
     # LEAVE BALANCE
-    balance = get_leave_balance(employee_id, year)
-    if balance:
-        annual_total = float(balance.get("annual_total", 0) or 0)
-        annual_used = float(balance.get("annual_used", 0) or 0)
-        annual_remaining = max(annual_total - annual_used, 0)
+    summary = get_leave_summary(employee_id, year)
+    annual_total = float(summary.get("annual_total", 0) or 0)
+    annual_used = float(summary.get("annual_used", 0) or 0)
+    annual_remaining = max(annual_total - annual_used, 0)
 
-        medical_total = float(balance.get("medical_total", 0) or 0)
-        medical_used = float(balance.get("medical_used", 0) or 0)
-        medical_remaining = max(medical_total - medical_used, 0)
-    else:
-        annual_total = 0
-        annual_used = 0
-        annual_remaining = 0
-
-        medical_total = 0
-        medical_used = 0
-        medical_remaining = 0
+    medical_total = float(summary.get("medical_total", 0) or 0)
+    medical_used = float(summary.get("medical_used", 0) or 0)
+    medical_remaining = max(medical_total - medical_used, 0)
 
     # PAYSLIPS
     try:

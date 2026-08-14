@@ -101,19 +101,22 @@ if view_mode == "Individual Employee":
 
     # Leave Impact
     st.markdown("### 🏖 Leave Impact")
-    leave_summary = get_yearly_leave_summary(emp_id, selected_year,)
+    leave_summary = get_yearly_leave_summary(emp_id, selected_year)
 
     annual_used = float(leave_summary.get("AL", 0) or 0)
+    annual_remaining = float(leave_summary.get("AL_remaining", 0.0) or 0.0)
     medical_used = float(leave_summary.get("MC", 0) or 0)
     unpaid_used = float(leave_summary.get("UPL", 0) or 0)
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric( "Annual Leave Taken",f"{annual_used:.1f} days")
+        st.metric("Annual Leave Used", f"{annual_used:.1f} days")
     with c2:
-        st.metric("Medical Leave Taken",f"{medical_used:.1f} days")
+        st.metric("Annual Leave Remaining", f"{annual_remaining:.1f} days")
     with c3:
-        st.metric("Unpaid Leave Taken",f"{unpaid_used:.1f} days")
+        st.metric("Unpaid Leave Used", f"{unpaid_used:.1f} days")
+
+    st.caption("This is derived from the centralized leave rules, so AL overflow is split into unpaid instead of being counted as all AL.")
 
     st.markdown("<div style='height:20px'></div>",unsafe_allow_html=True)
 
