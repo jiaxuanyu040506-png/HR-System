@@ -84,6 +84,8 @@ except ImportError:
         employees = read_table("Employees")
         if employees.empty:
             return []
+        if "role" in employees.columns:
+            employees = employees[employees["role"].astype(str).str.lower() != "manager"].copy()
 
         summaries = []
         for _, employee in employees.iterrows():
@@ -183,6 +185,8 @@ if section == "Record Leave":
 
         # LOAD DATA
         employees = read_table("Employees")
+        if not employees.empty and "role" in employees.columns:
+            employees = employees[employees["role"].astype(str).str.lower() != "manager"].copy()
         summaries = get_employee_leave_summaries(selected_year)
         employee_by_type = (get_employee_leave_type_days(selected_year))
         employee_monthly = (get_employee_monthly_leave_days(selected_year))
@@ -422,6 +426,8 @@ if section == "Record Leave":
         if employees is None:
             from utils.sheets_client import read_table
             employees = read_table("Employees")
+        if not employees.empty and "role" in employees.columns:
+            employees = employees[employees["role"].astype(str).str.lower() != "manager"].copy()
 
         if employees.empty:
             st.caption("No employees found to record leave for.")

@@ -25,6 +25,12 @@ st.title("Attendance")
 # )
 
 employees = read_table("Employees")
+if not employees.empty and "role" in employees.columns:
+    employees = employees[employees["role"].astype(str).str.lower() != "manager"].copy()
+current_employee_id = str(st.session_state.get("employee_id", ""))
+if st.session_state.get("role") == "employee":
+    employees = employees[employees["employee_id"].astype(str) == current_employee_id].copy() if not employees.empty else employees.copy()
+
 if employees.empty:
     st.caption("No employees found yet.")
     st.stop()

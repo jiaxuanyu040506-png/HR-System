@@ -14,6 +14,8 @@ st.title("Employee Management")
 
 role = st.session_state["role"]
 df = read_table("Employees")
+if not df.empty and "role" in df.columns:
+    df = df[df["role"].astype(str).str.lower() != "manager"].copy()
 
 # Widened so long-tenured staff (company started in 1998) can pick their real dates.
 MIN_DATE = date(1950, 1, 1)
@@ -21,6 +23,16 @@ MAX_DATE = date.today()
 
 DEPARTMENTS = ["Secretary", "Service", "Account"]
 GENDER = ["Female", "Male"]
+
+if role == "employee":
+    current_employee_id = str(st.session_state.get("employee_id", ""))
+    my_df = df[df["employee_id"].astype(str) == current_employee_id].copy() if not df.empty else df.copy()
+
+    st.subheader("My Record")
+    display_cols = [c for c in ["employee_id", "name", "email", "department", "status", "role"] if c in my_df.columns]
+    st.dataframe(my_df[display_cols] if not my_df.empty else my_df, use_container_width=True)
+    st.caption("You can only view your own employee record. To update your details, go to 'My Profile'.")
+    st.stop()
 
 if role != "hr_admin" and role != "manager":
     st.subheader("Directory")

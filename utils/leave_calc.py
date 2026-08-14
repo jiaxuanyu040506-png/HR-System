@@ -687,6 +687,11 @@ def get_employee_leave_type_days(year: int | None = None) -> list[dict]:
     if df.empty:
         return []
 
+    employees = read_table("Employees")
+    if not employees.empty and "role" in employees.columns:
+        valid_employee_ids = set(employees[employees["role"].astype(str).str.lower() != "manager"]["employee_id"].astype(str).tolist())
+        df = df[df["employee_id"].astype(str).isin(valid_employee_ids)].copy()
+
     approved = df[df["status"] == "Approved"]
     totals: dict[tuple, float] = defaultdict(float)
 
@@ -721,6 +726,11 @@ def get_employee_monthly_leave_days(year: int | None = None) -> list[dict]:
     df = read_table("LeaveRequests")
     if df.empty:
         return []
+
+    employees = read_table("Employees")
+    if not employees.empty and "role" in employees.columns:
+        valid_employee_ids = set(employees[employees["role"].astype(str).str.lower() != "manager"]["employee_id"].astype(str).tolist())
+        df = df[df["employee_id"].astype(str).isin(valid_employee_ids)].copy()
 
     approved = df[df["status"] == "Approved"]
     totals: dict[tuple, float] = defaultdict(float)
@@ -761,6 +771,11 @@ def get_monthly_approved_leave_headcount(year: int | None = None) -> dict[str, i
     df = read_table("LeaveRequests")
     if df.empty:
         return {}
+
+    employees = read_table("Employees")
+    if not employees.empty and "role" in employees.columns:
+        valid_employee_ids = set(employees[employees["role"].astype(str).str.lower() != "manager"]["employee_id"].astype(str).tolist())
+        df = df[df["employee_id"].astype(str).isin(valid_employee_ids)].copy()
 
     approved = df[df["status"] == "Approved"]
     month_employee_map: dict[tuple[int, int], set[str]] = {}
@@ -803,6 +818,9 @@ def get_employee_leave_summaries(year: int | None = None) -> list[dict]:
     employees = read_table("Employees")
     if employees.empty:
         return []
+
+    if "role" in employees.columns:
+        employees = employees[employees["role"].astype(str).str.lower() != "manager"].copy()
 
     summaries = []
 

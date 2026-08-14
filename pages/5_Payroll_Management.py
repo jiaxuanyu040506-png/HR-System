@@ -27,6 +27,13 @@ render_nav_sidebar(st.session_state["role"])
 st.title("Payroll Management")
 employees = read_table("Employees")
 payslips = read_table("Payslips")
+if not employees.empty and "role" in employees.columns:
+    employees = employees[employees["role"].astype(str).str.lower() != "manager"].copy()
+current_employee_id = str(st.session_state.get("employee_id", ""))
+
+if st.session_state.get("role") == "employee":
+    employees = employees[employees["employee_id"].astype(str) == current_employee_id].copy() if not employees.empty else employees.copy()
+    payslips = payslips[payslips["employee_id"].astype(str) == current_employee_id].copy() if not payslips.empty else payslips.copy()
 
 # Payroll Summary
 current_month = date.today().strftime("%Y-%m")

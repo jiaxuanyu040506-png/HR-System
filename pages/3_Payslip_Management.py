@@ -11,6 +11,12 @@ st.title("Payslip Management")
 
 role = st.session_state["role"]
 employees = read_table("Employees")
+if not employees.empty and "role" in employees.columns:
+    employees = employees[employees["role"].astype(str).str.lower() != "manager"].copy()
+current_employee_id = str(st.session_state.get("employee_id", ""))
+
+if role == "employee":
+    employees = employees[employees["employee_id"].astype(str) == current_employee_id].copy() if not employees.empty else employees.copy()
 
 # ---------- HR: generate payslips ----------
 if role == "hr_admin":
