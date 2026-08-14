@@ -62,34 +62,15 @@ with tab_log:
                                                                   year_end = company_info.get("year_end"),)
                 st.html(
                     f"""
-                    <div style="
-                        margin-top:12px;
-                        padding:12px 16px;
-                        background:#f8fbff;
-                        border:1px solid #dbeafe;
-                        border-radius:12px;
-                    ">
-                        <div style="
-                            font-size:0.82rem;
-                            color:#64748b;
-                            margin-bottom:3px;
-                        ">
-                            PERFORMANCE DEADLINE
-                        </div>
-
-                        <div style="
-                            font-size:1.05rem;
-                            font-weight:700;
-                            color:#172033;
-                        ">
-                            📅 {due_date_.strftime('%d %b %Y')}
-                        </div>
+                    <div class="deadline-box">
+                        <div class="deadline-label">PERFORMANCE DEADLINE</div>
+                        <div class="deadline-date">📅 {due_date_.strftime('%d %b %Y')}</div>
                     </div>
                     """)
 
     # EMPLOYEE & COMPLETION
     if companies and company_names:
-        st.html("<div style='height:16px'></div>")
+        st.html('<div class="spacer-sm"></div>')
         with st.container(border=True):
             st.markdown("#### 👤 Employee & Completion")
             emp_names = (employees["name"].tolist() if not employees.empty else [])
@@ -107,17 +88,8 @@ with tab_log:
                 else:
                     st.html(
                         """
-                        <div style="
-                            margin-top:8px;
-                            padding:11px 15px;
-                            background:#fffaf0;
-                            border:1px solid #fde68a;
-                            border-radius:10px;
-                            color:#92400e;
-                            font-size:0.88rem;
-                        ">
-                            ⏳ This company is currently assigned to this
-                            employee but has not been completed yet.
+                        <div class="notice-box">
+                            ⏳ This company is currently assigned to this employee but has not been completed yet.
                         </div>
                         """)
 
@@ -208,7 +180,7 @@ with tab_log:
         editing_rows = records[records["record_id"].astype(str) == str(editing_id)]
         if not editing_rows.empty:
             editing_row = editing_rows.iloc[0]
-            st.html("<div style='height:20px'></div>")
+            st.html('<div class="spacer-md"></div>')
             with st.container(border=True):
                 st.markdown("#### ✏️ Update Performance Record")
                 st.caption(f"Record ID: {editing_id}")
@@ -229,30 +201,13 @@ with tab_log:
                     edit_due_date = calculate_due_date(edit_category, date.today().year, edit_company_info.get("year_end"),)
                     st.html(
                         f"""
-                        <div style="
-                            margin:8px 0 16px 0;
-                            padding:11px 15px;
-                            background:#f8fbff;
-                            border:1px solid #dbeafe;
-                            border-radius:12px;
-                        ">
-                            <span style="
-                                color:#64748b;
-                                font-size:0.85rem;
-                            ">
-                                Updated Deadline
-                            </span>
-
+                        <div class="deadline-inline-box">
+                            <span class="deadline-inline-label">Updated Deadline</span>
                             <br>
-
-                            <strong style="
-                                color:#172033;
-                                font-size:1rem;
-                            ">
-                                📅 {edit_due_date.strftime('%d %b %Y')}
-                            </strong>
+                            <strong class="deadline-inline-date">📅 {edit_due_date.strftime('%d %b %Y')}</strong>
                         </div>
-                        """)
+                        """
+                    )
 
                     # EMPLOYEE
                     emp_names_edit = (employees["name"].tolist() if not employees.empty else [])
@@ -282,15 +237,7 @@ with tab_log:
                     else:
                         st.html(
                             """
-                            <div style="
-                                margin-top:8px;
-                                padding:11px 15px;
-                                background:#fffaf0;
-                                border:1px solid #fde68a;
-                                border-radius:10px;
-                                color:#92400e;
-                                font-size:0.88rem;
-                            ">
+                            <div class="info-note warning-note">
                                 ⏳ This record will remain
                                 <strong>Pending</strong>.
                                 No completion date is required.
@@ -341,7 +288,7 @@ with tab_performance:
     else:
         emp_names = employees["name"].tolist()                      # EMPLOYEE SELECTOR
         selected_employee = st.selectbox("Select Employee", emp_names, key = "performance_employee",)
-        st.html("<div style='height:12px'></div>")
+        st.html('<div class="spacer-xs"></div>')
 
         all_records = get_all_performance_records()                  # GET EMPLOYEE RECORDS
         if all_records.empty:
@@ -358,79 +305,23 @@ with tab_performance:
         with c1:
             st.html(
                 f"""
-                <div style="
-                    border:1px solid #e2e8f0;
-                    border-radius:14px;
-                    padding:18px 20px;
-                    background:#ffffff;
-                    min-height:120px;
-                    box-shadow:0 2px 8px rgba(15,23,42,0.03);
-                ">
-                    <div style="
-                        font-size:0.9rem;
-                        color:#64748b;
-                        font-weight:600;
-                        margin-bottom:10px;
-                    ">
-                        🏢 Total Records
-                    </div>
-
-                    <div style="
-                        font-size:1.9rem;
-                        font-weight:700;
-                        color:#172033;
-                        line-height:1.1;
-                    ">
-                        {total_records}
-                    </div>
-
-                    <div style="
-                        font-size:0.82rem;
-                        color:#64748b;
-                        margin-top:7px;
-                    ">
-                        companies assigned
-                    </div>
+                <div class="dashboard-summary-card">
+                    <div class="dashboard-card-label">🏢 Total Records</div>
+                    <div class="dashboard-card-value">{total_records}</div>
+                    <div class="dashboard-card-sub">companies assigned</div>
                 </div>
-                """)
+                """
+            )
         with c2:
             st.html(
                 f"""
-                <div style="
-                    border:1px solid #e2e8f0;
-                    border-radius:14px;
-                    padding:18px 20px;
-                    background:#ffffff;
-                    min-height:120px;
-                    box-shadow:0 2px 8px rgba(15,23,42,0.03);
-                ">
-                    <div style="
-                        font-size:0.9rem;
-                        color:#64748b;
-                        font-weight:600;
-                        margin-bottom:10px;
-                    ">
-                        ✅ Done
-                    </div>
-
-                    <div style="
-                        font-size:1.9rem;
-                        font-weight:700;
-                        color:#172033;
-                        line-height:1.1;
-                    ">
-                        {done_records}
-                    </div>
-
-                    <div style="
-                        font-size:0.82rem;
-                        color:#64748b;
-                        margin-top:7px;
-                    ">
-                        completed on time
-                    </div>
+                <div class="dashboard-summary-card">
+                    <div class="dashboard-card-label">✅ Done</div>
+                    <div class="dashboard-card-value">{done_records}</div>
+                    <div class="dashboard-card-sub">completed on time</div>
                 </div>
-                """)
+                """
+            )
         with c3:
             st.html(
                 f"""
@@ -472,44 +363,15 @@ with tab_performance:
             )
 
         with c4:
-
             st.html(
                 f"""
-                <div style="
-                    border:1px solid #e2e8f0;
-                    border-radius:14px;
-                    padding:18px 20px;
-                    background:#ffffff;
-                    min-height:120px;
-                    box-shadow:0 2px 8px rgba(15,23,42,0.03);
-                ">
-                    <div style="
-                        font-size:0.9rem;
-                        color:#64748b;
-                        font-weight:600;
-                        margin-bottom:10px;
-                    ">
-                        ⏳ Pending
-                    </div>
-
-                    <div style="
-                        font-size:1.9rem;
-                        font-weight:700;
-                        color:#172033;
-                        line-height:1.1;
-                    ">
-                        {pending_records}
-                    </div>
-
-                    <div style="
-                        font-size:0.82rem;
-                        color:#64748b;
-                        margin-top:7px;
-                    ">
-                        still outstanding
-                    </div>
+                <div class="dashboard-summary-card">
+                    <div class="dashboard-card-label">⏳ Pending</div>
+                    <div class="dashboard-card-value">{pending_records}</div>
+                    <div class="dashboard-card-sub">still outstanding</div>
                 </div>
-                """)
+                """
+            )
             
         # COMPANY LIST
         st.html("<div style='height:26px'></div>")
@@ -557,57 +419,14 @@ with tab_performance:
 
                     st.html(
                         f"""
-                        <div style="
-                            border:1px solid #e2e8f0;
-                            border-radius:14px;
-                            padding:16px 18px;
-                            background:#ffffff;
-                            margin-bottom:10px;
-                            box-shadow:0 2px 8px rgba(15,23,42,0.03);
-                        ">
-
-                            <div style="
-                                display:flex;
-                                justify-content:space-between;
-                                align-items:center;
-                                gap:15px;
-                            ">
-
-                                <div style="
-                                    min-width:0;
-                                    flex:1;
-                                ">
-
-                                    <div style="
-                                        font-size:1rem;
-                                        font-weight:700;
-                                        color:#172033;
-                                        margin-bottom:5px;
-                                    ">
-                                        {company_name}
-                                    </div>
-
-                                    <div style="
-                                        font-size:0.84rem;
-                                        color:#64748b;
-                                    ">
-                                        Due: {due_date}
-                                        &nbsp;&nbsp;•&nbsp;&nbsp;
-                                        Completed: {completion_date}
-                                    </div>
-
+                        <div class="dashboard-request-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:15px;">
+                                <div style="min-width:0; flex:1;">
+                                    <div class="dashboard-request-title">{company_name}</div>
+                                    <div class="dashboard-request-date">Due: {due_date} &nbsp;&nbsp;•&nbsp;&nbsp; Completed: {completion_date}</div>
                                 </div>
-
-                                <div style="
-                                    white-space:nowrap;
-                                    font-size:0.88rem;
-                                    font-weight:600;
-                                ">
-                                    {status_text}
-                                </div>
-
+                                <div style="white-space:nowrap; font-size:0.88rem; font-weight:600;">{status_text}</div>
                             </div>
-
                         </div>
                         """
                     )

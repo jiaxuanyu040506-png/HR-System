@@ -75,10 +75,7 @@ def show_pdf_preview(pdf_bytes: bytes, height: int = 700,):
         src="data:application/pdf;base64,{base64_pdf}"
         width="100%"
         height="{height}"
-        style="
-            border: 1px solid #ddd;
-            border-radius: 8px;
-        "
+        class="pdf-preview"
         type="application/pdf">
     </iframe>
     """

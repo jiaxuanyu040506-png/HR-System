@@ -208,20 +208,9 @@ with tab_edit:
         # Updated 17 July
         year = date.today().year
         summary = get_leave_summary(employee["employee_id"], year)
-        st.html("<div style='height:18px'></div>")
+        st.html('<div class="spacer-sm"></div>')
 
-        st.html(
-            f"""
-            <div style="
-                font-size:1.15rem;
-                font-weight:700;
-                color:#172033;
-                margin-bottom:10px;
-            ">
-                Leave Balance · {year}
-            </div>
-            """
-        )
+        st.html(f'<div class="section-heading">Leave Balance · {year}</div>')
 
         annual_total = float(summary["annual_total"])
         annual_used = float(summary["annual_used"])

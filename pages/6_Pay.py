@@ -105,88 +105,6 @@ def get_payslip_sort_date(value):
 
     return pd.Timestamp.min
 
-# CUSTOM PAY PAGE STYLING
-st.markdown(
-    """
-    <style>
-
-    /* --------------------------------------------------------
-       Pay page intro
-    -------------------------------------------------------- */
-
-    .pay-welcome {
-        background: linear-gradient(
-            135deg,
-            #f8fbff 0%,
-            #eef6ff 100%
-        );
-        border: 1px solid #dbeafe;
-        border-radius: 14px;
-        padding: 18px 20px;
-        margin-bottom: 20px;
-    }
-
-    .pay-welcome-title {
-        font-size: 1.15rem;
-        font-weight: 700;
-        color: #172033;
-        margin-bottom: 4px;
-    }
-
-    .pay-welcome-text {
-        font-size: 0.9rem;
-        color: #64748b;
-    }
-
-    /* --------------------------------------------------------
-       Document card information
-    -------------------------------------------------------- */
-
-    .pay-document-title {
-        font-size: 1rem;
-        font-weight: 700;
-        color: #172033;
-        margin-bottom: 3px;
-    }
-
-    .pay-document-subtitle {
-        font-size: 0.84rem;
-        color: #64748b;
-    }
-
-    .pay-net-pay {
-        font-size: 1.05rem;
-        font-weight: 700;
-        color: #172033;
-    }
-
-    .pay-preview-title {
-        font-size: 1rem;
-        font-weight: 700;
-        color: #172033;
-        margin-top: 12px;
-        margin-bottom: 8px;
-    }
-
-    /* --------------------------------------------------------
-       EA Form / document note
-    -------------------------------------------------------- */
-
-    .pay-document-note {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 10px 13px;
-        color: #475569;
-        font-size: 0.86rem;
-        margin-top: 12px;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 # PAGE INTRO
 st.html(
     """
@@ -243,36 +161,6 @@ else:
     payslip_count = 0
 
 # KPI CARDS
-st.markdown(
-            """
-            <style>
-            .kpi-card {
-                background: white;
-                border: 1px solid #E5E7EB;
-                border-radius: 12px;
-                padding: 18px 20px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-                min-height: 105px;
-            }
-
-            .kpi-label {
-                font-size: 14px;
-                color: #6B7280;
-                font-weight: 500;
-                margin-bottom: 6px;
-            }
-
-            .kpi-value {
-                font-size: 28px;
-                font-weight: 700;
-                color: #111827;
-                line-height: 1.2;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-
 c1, c2, c3 = st.columns(3)
 with c1:
     st.markdown(

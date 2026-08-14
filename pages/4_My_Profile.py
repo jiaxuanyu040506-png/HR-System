@@ -21,62 +21,15 @@ me = me.iloc[0]
 
 # PROFILE HEADER
 initials = "".join([p[0] for p in str(me["name"]).split()[:2]]).upper() or "?"
-st.html("<div style='height:20px'></div>")
+st.html('<div class="spacer-md"></div>')
 st.html(
     f"""
-    <div style="
-        margin:0;
-        padding:12px 0 8px 0;
-    ">
-
-        <div style="
-            display:flex;
-            align-items:center;
-            gap:12px;
-            min-width:0;
-        ">
-
-            <div style="
-                width:46px;
-                height:46px;
-                border-radius:50%;
-                background:#1e4a9e;
-                color:white;
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                font-size:1.25rem;
-                font-weight:700;
-                flex-shrink:0;
-            ">
-                {initials}
-            </div>
-
-            <div style="
-                min-width:0;
-                flex:1;
-            ">
-
-                <div style="
-                    font-size:1.35rem;
-                    font-weight:700;
-                    line-height:1.25;
-                    margin:0;
-                    padding:0;
-                    overflow-wrap:anywhere;
-                    word-break:break-word;
-                    color:#172033;
-                ">
-                    {me['name']}
-                </div>
-
-                <div style="
-                    font-size:0.92rem;
-                    color:#64748b;
-                    margin-top:3px;
-                    overflow-wrap:anywhere;
-                    word-break:break-word;
-                ">
+    <div class="profile-shell">
+        <div class="profile-header">
+            <div class="profile-avatar">{initials}</div>
+            <div class="profile-meta">
+                <div class="profile-name">{me['name']}</div>
+                <div class="profile-role">
                     {st.session_state['role'].replace('_', ' ').title()}
                     ·
                     {me.get('department', '-')}
@@ -96,14 +49,7 @@ with col_account:
     with st.container(border=True):
         st.html(
             """
-            <div style="
-                font-size:1.15rem;
-                font-weight:700;
-                color:#172033;
-                margin-bottom:12px;
-            ">
-                🔐 Account Information
-            </div>
+            <div class="panel-title">🔐 Account Information</div>
             """
         )
 
@@ -129,18 +75,11 @@ with col_account:
                     st.success("Password updated successfully.")
 
     # Employment Details
-    st.html("<div style='height:18px'></div>")
+    st.html('<div class="spacer-sm"></div>')
     with st.container(border=True):
         st.html(
             """
-            <div style="
-                font-size:1.15rem;
-                font-weight:700;
-                color:#172033;
-                margin-bottom:12px;
-            ">
-                💼 Employment Details
-            </div>
+            <div class="panel-title">💼 Employment Details</div>
             """
         )
 
@@ -156,14 +95,7 @@ with col_personal:
     with st.container(border=True):
         st.html(
             """
-            <div style="
-                font-size:1.15rem;
-                font-weight:700;
-                color:#172033;
-                margin-bottom:12px;
-            ">
-                👤 Personal Details
-            </div>
+            <div class="panel-title">👤 Personal Details</div>
             """
         )
 
@@ -201,27 +133,14 @@ with col_personal:
                 st.rerun()
 
 # LOGOUT
-st.html("<div style='height:22px'></div>")
+st.html('<div class="spacer-lg"></div>')
 with st.container(border=True):
     logout_col1, logout_col2 = st.columns([4, 1])
     with logout_col1:
         st.html(
             """
-            <div style="
-                font-size:1.15rem;
-                font-weight:700;
-                color:#172033;
-                margin-bottom:4px;
-            ">
-                🚪 Sign Out
-            </div>
-
-            <div style="
-                font-size:0.88rem;
-                color:#64748b;
-            ">
-                Sign out of your employee account.
-            </div>
+            <div class="panel-title panel-title-compact">🚪 Sign Out</div>
+            <div class="muted-text">Sign out of your employee account.</div>
             """
         )
 

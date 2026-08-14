@@ -83,53 +83,12 @@ def status_badge(status):
     status = str(status or "Unknown")
     status_lower = status.lower()
     if status_lower == "approved":
-        return (
-            "<span style='"
-            "background:#dcfce7;"
-            "color:#166534;"
-            "padding:4px 10px;"
-            "border-radius:999px;"
-            "font-size:0.82rem;"
-            "font-weight:600;"
-            "'>✓ Approved</span>"
-        )
-
+        return '<span class="status-badge status-badge-approved">✓ Approved</span>'
     elif status_lower == "pending":
-        return (
-            "<span style='"
-            "background:#fef3c7;"
-            "color:#92400e;"
-            "padding:4px 10px;"
-            "border-radius:999px;"
-            "font-size:0.82rem;"
-            "font-weight:600;"
-            "'>◷ Pending</span>"
-        )
-
+        return '<span class="status-badge status-badge-pending">◷ Pending</span>'
     elif status_lower == "rejected":
-        return (
-            "<span style='"
-            "background:#fee2e2;"
-            "color:#991b1b;"
-            "padding:4px 10px;"
-            "border-radius:999px;"
-            "font-size:0.82rem;"
-            "font-weight:600;"
-            "'>✕ Rejected</span>"
-        )
-
-    return (
-        "<span style='"
-        "background:#f1f5f9;"
-        "color:#475569;"
-        "padding:4px 10px;"
-        "border-radius:999px;"
-        "font-size:0.82rem;"
-        "font-weight:600;"
-        "'>"
-        + status
-        + "</span>"
-    )
+        return '<span class="status-badge status-badge-rejected">✕ Rejected</span>'
+    return f'<span class="status-badge status-badge-default">{status}</span>'
 
 # WELCOME MESSAGE
 st.html(
@@ -156,21 +115,12 @@ if section == "Apply Leave":
     # REMINDER
     st.markdown(
         """
-        <div style="
-            background:#fff7f7;
-            border:1px solid #f5d0d0;
-            border-radius:10px;
-            padding:13px 16px;
-            margin-top:18px;
-            color:#475569;
-            font-size:1rem;
-            line-height:1.5;
-        ">
+        <div class="info-note warning-note">
             📌 <strong>Important Reminder:</strong>
             Please apply for leave at least one week in advance.
             For urgent leave, please inform BOSS.
         </div>
-        """,unsafe_allow_html=True,)
+        """, unsafe_allow_html=True)
 
     # SUCCESS MESSAGE
     if "leave_submit_message" in st.session_state:
@@ -353,15 +303,7 @@ elif section == "Leave Calendar":
 
         st.markdown(
             """
-            <div style="
-                margin-top:12px;
-                padding:10px 14px;
-                background:#f8fafc;
-                border:1px solid #e2e8f0;
-                border-radius:10px;
-                font-size:0.88rem;
-                color:#475569;
-            ">
+            <div class="calendar-legend">
                 🔵 Annual&nbsp;&nbsp;&nbsp;
                 🌸 Medical&nbsp;&nbsp;&nbsp;
                 ⚪ Unpaid&nbsp;&nbsp;&nbsp;
@@ -369,11 +311,9 @@ elif section == "Leave Calendar":
                 🟠 Hospitalization&nbsp;&nbsp;&nbsp;
                 🟢 Special
                 <br>
-                <span style="color:#64748b;">
-                    Only approved leave requests are shown.
-                </span>
+                <span>Only approved leave requests are shown.</span>
             </div>
-            """, unsafe_allow_html=True,)
+            """, unsafe_allow_html=True)
 
     except ImportError:
         st.error("The streamlit-calendar package isn't installed in this environment.")
@@ -400,34 +340,6 @@ else:
         pending_count = (history_df["status"].astype(str).str.lower().eq("pending").sum())
 
         # KPI CARDS
-        st.markdown(
-            """
-            <style>
-            .kpi-card {
-                background: white;
-                border: 1px solid #E5E7EB;
-                border-radius: 12px;
-                padding: 18px 20px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-                min-height: 105px;
-            }
-
-            .kpi-label {
-                font-size: 14px;
-                color: #6B7280;
-                font-weight: 500;
-                margin-bottom: 6px;
-            }
-
-            .kpi-value {
-                font-size: 28px;
-                font-weight: 700;
-                color: #111827;
-                line-height: 1.2;
-            }
-            </style>
-            """, unsafe_allow_html=True,)
-
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown(

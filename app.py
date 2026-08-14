@@ -14,16 +14,16 @@ if not st.session_state["logged_in"]:
         st.rerun()
     st.markdown(
         """
-        <div style='max-width: 520px; margin: 2.5rem auto 1rem auto; padding: 2rem 2.2rem; border-radius: 24px; background: #ffffff; box-shadow: 0 10px 35px rgba(15, 23, 42, 0.08);'>
-            <h1 style='text-align:center; margin-bottom:0.25rem; color:#16326e;'>HR Management System</h1>
-            <p style='text-align:center; color:#64748b; margin-bottom:1.5rem;'>Welcome! Please sign in to your account</p>
+        <div class="auth-card-shell">
+            <h1 class="auth-header-title">HR Management System</h1>
+            <p class="auth-header-subtitle">Welcome! Please sign in to your account</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
     with st.container():
         with st.form("login_form"):
-            st.markdown("<div style='max-width: 520px; margin: 0 auto; padding: 1.4rem 1.6rem; border-radius: 20px; background: #ffffff; box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);'>", unsafe_allow_html=True)
+            st.markdown("<div class='auth-form-shell'>", unsafe_allow_html=True)
             email = st.text_input("Email")
             password = st.text_input("Password", type="password")
             remember = st.checkbox("Remember me")

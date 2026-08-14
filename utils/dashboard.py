@@ -97,39 +97,10 @@ def render_hr_dashboard():
     with c1:
         st.html(
             f"""
-            <div style="
-                border:1px solid #e2e8f0;
-                border-radius:14px;
-                padding:18px 20px;
-                background:#ffffff;
-                min-height:120px;
-                box-shadow:0 2px 8px rgba(15,23,42,0.03);
-            ">
-                <div style="
-                    font-size:0.9rem;
-                    color:#64748b;
-                    font-weight:600;
-                    margin-bottom:10px;
-                ">
-                    👥 Total Employees
-                </div>
-
-                <div style="
-                    font-size:1.9rem;
-                    font-weight:700;
-                    color:#172033;
-                    line-height:1.1;
-                ">
-                    {len(active_employees)}
-                </div>
-
-                <div style="
-                    font-size:0.82rem;
-                    color:#64748b;
-                    margin-top:7px;
-                ">
-                    active employees
-                </div>
+            <div class="metric-card">
+                <div class="metric-label">👥 Total Employees</div>
+                <div class="metric-value">{len(active_employees)}</div>
+                <div class="metric-subtext">active employees</div>
             </div>
             """
         )
@@ -137,39 +108,10 @@ def render_hr_dashboard():
     with c2:
         st.html(
             f"""
-            <div style="
-                border:1px solid #e2e8f0;
-                border-radius:14px;
-                padding:18px 20px;
-                background:#ffffff;
-                min-height:120px;
-                box-shadow:0 2px 8px rgba(15,23,42,0.03);
-            ">
-                <div style="
-                    font-size:0.9rem;
-                    color:#64748b;
-                    font-weight:600;
-                    margin-bottom:10px;
-                ">
-                    🕐 Pending Leaves
-                </div>
-
-                <div style="
-                    font-size:1.9rem;
-                    font-weight:700;
-                    color:#172033;
-                    line-height:1.1;
-                ">
-                    {len(pending)}
-                </div>
-
-                <div style="
-                    font-size:0.82rem;
-                    color:#64748b;
-                    margin-top:7px;
-                ">
-                    awaiting approval
-                </div>
+            <div class="metric-card">
+                <div class="metric-label">🕐 Pending Leaves</div>
+                <div class="metric-value">{len(pending)}</div>
+                <div class="metric-subtext">awaiting approval</div>
             </div>
             """
         )
@@ -177,43 +119,16 @@ def render_hr_dashboard():
     with c3:
         st.html(
             f"""
-            <div style="
-                border:1px solid #e2e8f0;
-                border-radius:14px;
-                padding:18px 20px;
-                background:#ffffff;
-                min-height:120px;
-                box-shadow:0 2px 8px rgba(15,23,42,0.03);
-            ">
-                <div style="
-                    font-size:0.9rem;
-                    color:#64748b;
-                    font-weight:600;
-                    margin-bottom:10px;
-                ">
-                    🗓️ Today's Leaves
-                </div>
-                <div style="
-                    font-size:1.9rem;
-                    font-weight:700;
-                    color:#172033;
-                    line-height:1.1;
-                ">
-                    {today_on_leave}
-                </div>
-                <div style="
-                    font-size:0.82rem;
-                    color:#64748b;
-                    margin-top:7px;
-                ">
-                    employees on leave today
-                </div>
+            <div class="metric-card">
+                <div class="metric-label">🗓️ Today's Leaves</div>
+                <div class="metric-value">{today_on_leave}</div>
+                <div class="metric-subtext">employees on leave today</div>
             </div>
             """
         )
 
     # LEAVE APPROVAL QUEUE
-    st.html("<div style='height:24px'></div>")
+    st.html('<div class="spacer-md"></div>')
     lcol, bcol = st.columns([4, 1])
     with lcol:
         st.html(
@@ -370,267 +285,15 @@ def _status_badge(status):
     status_lower = status.lower()
 
     if status_lower == "approved":
-        return """
-        <span style="
-            background:#dcfce7;
-            color:#166534;
-            padding:5px 11px;
-            border-radius:999px;
-            font-size:0.78rem;
-            font-weight:600;
-        ">
-            ✓ Approved
-        </span>
-        """
-
+        return '<span class="status-badge status-badge-approved">✓ Approved</span>'
     elif status_lower == "pending":
-        return """
-        <span style="
-            background:#fef3c7;
-            color:#92400e;
-            padding:5px 11px;
-            border-radius:999px;
-            font-size:0.78rem;
-            font-weight:600;
-        ">
-            ◷ Pending
-        </span>
-        """
-
+        return '<span class="status-badge status-badge-pending">◷ Pending</span>'
     elif status_lower == "rejected":
-        return """
-        <span style="
-            background:#fee2e2;
-            color:#991b1b;
-            padding:5px 11px;
-            border-radius:999px;
-            font-size:0.78rem;
-            font-weight:600;
-        ">
-            ✕ Rejected
-        </span>
-        """
-
-    return f"""
-    <span style="
-        background:#f1f5f9;
-        color:#475569;
-        padding:5px 11px;
-        border-radius:999px;
-        font-size:0.78rem;
-        font-weight:600;
-    ">
-        {status}
-    </span>
-    """
+        return '<span class="status-badge status-badge-rejected">✕ Rejected</span>'
+    return f'<span class="status-badge status-badge-default">{status}</span>'
 
 # PERSONAL DASHBOARD
 def render_personal_dashboard(role: str):
-    st.html(
-        """
-        <style>
-
-        /* ---------------------------------------------------
-           Welcome Banner
-        --------------------------------------------------- */
-        .dashboard-welcome {
-            background: linear-gradient(
-                135deg,
-                #f8fbff 0%,
-                #eef6ff 100%
-            );
-            border: 1px solid #dbeafe;
-            border-radius: 16px;
-            padding: 20px 22px;
-            margin-bottom: 22px;
-        }
-
-        .dashboard-welcome-title {
-            font-size: 1.35rem;
-            font-weight: 700;
-            color: #172033;
-            margin-bottom: 5px;
-        }
-
-        .dashboard-welcome-text {
-            font-size: 0.92rem;
-            color: #64748b;
-            line-height: 1.5;
-        }
-
-        /* ---------------------------------------------------
-           Section Title
-        --------------------------------------------------- */
-        .dashboard-section-title {
-            font-size: 1.15rem;
-            font-weight: 700;
-            color: #172033;
-            margin-top: 4px;
-            margin-bottom: 12px;
-        }
-
-        /* ---------------------------------------------------
-           KPI Cards
-        --------------------------------------------------- */
-        .dashboard-kpi {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 16px;
-            padding: 18px 19px;
-            min-height: 125px;
-            box-shadow:
-                0 4px 14px rgba(15, 23, 42, 0.035);
-        }
-
-        .dashboard-kpi-label {
-            font-size: 0.84rem;
-            color: #64748b;
-            font-weight: 600;
-            margin-bottom: 9px;
-        }
-
-        .dashboard-kpi-value {
-            font-size: 1.65rem;
-            font-weight: 700;
-            color: #172033;
-            line-height: 1.2;
-            margin-bottom: 5px;
-        }
-
-        .dashboard-kpi-sub {
-            font-size: 0.78rem;
-            color: #94a3b8;
-        }
-
-        /* ---------------------------------------------------
-           Quick Access
-        --------------------------------------------------- */
-        .dashboard-quick-card {
-            position: relative;
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 16px;
-            padding: 18px;
-            min-height: 105px;
-            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.035);
-            transition: 0.2s ease;
-        }
-
-        .dashboard-quick-icon {
-            font-size: 1.45rem;
-            margin-bottom: 10px;
-        }
-
-        .dashboard-quick-title {
-            font-size: 0.98rem;
-            font-weight: 650;
-            color: #172033;
-        }
-
-        .dashboard-quick-arrow {
-            position: absolute;
-            right: 16px;
-            bottom: 14px;
-            color: #94a3b8;
-            font-size: 1.1rem;
-        }
-
-        /* ---------------------------------------------------
-           Upcoming Leave Card
-        --------------------------------------------------- */
-        .dashboard-leave-card {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 16px;
-            padding: 17px 18px;
-            margin-bottom: 10px;
-            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.035);
-        }
-
-        .dashboard-leave-type {
-            font-size: 0.96rem;
-            font-weight: 650;
-            color: #172033;
-            margin-bottom: 4px;
-        }
-
-        .dashboard-leave-date {
-            font-size: 0.83rem;
-            color: #64748b;
-        }
-
-        .dashboard-leave-days {
-            font-size: 0.82rem;
-            color: #94a3b8;
-            margin-top: 4px;
-        }
-
-        /* ---------------------------------------------------
-           Recent Requests
-        --------------------------------------------------- */
-        .dashboard-request-card {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 14px;
-            padding: 14px 16px;
-            margin-bottom: 9px;
-        }
-
-        .dashboard-request-title {
-            font-size: 0.9rem;
-            font-weight: 650;
-            color: #172033;
-        }
-
-        .dashboard-request-date {
-            font-size: 0.78rem;
-            color: #64748b;
-            margin-top: 3px;
-        }
-
-        /* ---------------------------------------------------
-           Reminder
-        --------------------------------------------------- */
-        .dashboard-reminder {
-            background: #fff5f5;
-            border: 1px solid #fecaca;
-            border-radius: 14px;
-            padding: 14px 17px;
-            color: #991b1b;
-            font-size: 0.9rem;
-            line-height: 1.5;
-            margin-top: 4px;
-        }
-
-        /* ---------------------------------------------------
-           Company Notice
-        --------------------------------------------------- */
-        .dashboard-notice {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 14px;
-            padding: 16px 18px;
-            color: #475569;
-            font-size: 0.88rem;
-            line-height: 1.5;
-        }
-
-        .dashboard-notice-title {
-            color: #172033;
-            font-weight: 650;
-            margin-bottom: 5px;
-        }
-
-        /* ---------------------------------------------------
-           Streamlit Button
-        --------------------------------------------------- */
-        .dashboard-quick-card + div button {
-            margin-top: -4px;
-            border-radius: 10px;
-        }
-        </style>
-        """
-    )
 
     employee_id = st.session_state["employee_id"]
 
@@ -786,7 +449,7 @@ def render_personal_dashboard(role: str):
     _quick_access_button(q3, "My Profile", "👤", "pages/4_My_Profile.py",)
    
     # UPCOMING LEAVE + RECENT REQUESTS
-    st.html("<div style='height:28px'></div>")
+    st.html('<div class="spacer-md"></div>')
     left_col, right_col = st.columns([1.15, 1],gap="large")
 
     # UPCOMING LEAVE

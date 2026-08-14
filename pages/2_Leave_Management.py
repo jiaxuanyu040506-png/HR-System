@@ -521,10 +521,10 @@ elif section == "Leave Calendar":
                 "pending ones. Approve one in the 'Leave Approval' section to test it."
             )
         st.markdown(
-            "<div style='margin-top: 0.5rem; line-height: 1.8; font-size: 0.95rem;'>"
+            "<div class='calendar-note'>"
             "🔵 Annual &nbsp;&nbsp; 🌸 Medical &nbsp;&nbsp; ⚪ Unpaid &nbsp;&nbsp; 🟣 Maternity &nbsp;&nbsp; "
             "🟠 Hospitalization &nbsp;&nbsp; 🟢 Special"
-            "<br><span style='color: #64748b;'>Only approved requests are shown.</span>"
+            "<br><span class='muted'>Only approved requests are shown.</span>"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -661,12 +661,7 @@ elif section == "Leave Approval":
                             pdf_display = f"""
                             <iframe
                                 src="data:application/pdf;base64,{base64_file}"
-                                width="100%"
-                                height="600"
-                                style="
-                                    border: 1px solid #ddd;
-                                    border-radius: 8px;
-                                "
+                                class="pdf-preview"
                                 type="application/pdf">
                             </iframe>
                             """

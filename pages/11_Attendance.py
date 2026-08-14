@@ -47,7 +47,7 @@ LEGEND_ITEMS = [
     ("/", "Present"), ("AL", "Annual Leave"), ("MC", "Medical Leave"), ("UPL", "Unpaid Leave"),
     ("SL", "Special Leave"), ("ML", "Maternity Leave"), ("MRL", "Married Leave"), ("PH", "Public Holiday"), ("grey column", "Rest Day"),
 ]
-legend_text = "  ·  ".join(f"**{code}** = {label}" for code, label in LEGEND_ITEMS)
+legend_html = "  ·  ".join(f"<strong>{code}</strong> = {label}" for code, label in LEGEND_ITEMS)
 
 
 def _grey_rest_days(matrix: pd.DataFrame, rest_day_columns: list[int]):
@@ -60,7 +60,7 @@ def _grey_rest_days(matrix: pd.DataFrame, rest_day_columns: list[int]):
 if view_mode == "Individual Employee":
     
     # Employee Selection
-    st.markdown("### 👤 Employee Attendance")
+    st.markdown("<div class='section-title'>👤 Employee Attendance</div>", unsafe_allow_html=True)
 
     col1, col2 = st.columns([3, 1])
     selected_name = col1.selectbox("Employee",list(name_to_id.keys()),label_visibility="collapsed")
@@ -71,15 +71,11 @@ if view_mode == "Individual Employee":
     st.divider()
 
     # Attendance Summary
-    st.markdown("### 📊 Attendance Summary")
+    st.markdown("<div class='section-title'>📊 Attendance Summary</div>", unsafe_allow_html=True)
 
     summary = get_yearly_summary(emp_id,selected_name,selected_year,)
 
     if summary:
-        # summary_items = list(summary.items())
-        # cols = st.columns(len(summary_items))
-        # for col, (status, count) in zip(cols,summary_items):
-        #     col.metric(label=status,value=count)
         display_order = ["Present", "AL", "MC", "Public Holiday", "Rest Day",]
         summary_items = [
             (status, summary[status])
@@ -88,14 +84,23 @@ if view_mode == "Individual Employee":
         ]
         cols = st.columns(len(summary_items))
         for col, (status, count) in zip(cols,summary_items):
-            col.metric(label=status,value=count)
+            with col:
+                st.markdown(
+                    f"""
+                    <div class="metric-card">
+                        <div class="metric-label">{status}</div>
+                        <div class="metric-value">{count}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
     else:
         st.info("No attendance records found.")
 
-    st.markdown("<div style='height:20px'></div>",unsafe_allow_html=True)
+    st.markdown('<div class="spacer-sm"></div>', unsafe_allow_html=True)
 
     # Attendance Matrix
-    st.markdown("### 📅 Attendance Record")
+    st.markdown("<div class='section-title'>📅 Attendance Record</div>", unsafe_allow_html=True)
 
     matrix = get_attendance_matrix_for_employee_year(emp_id,selected_name,selected_year,)
     with st.container(border=True):
@@ -106,7 +111,7 @@ if view_mode == "Individual Employee":
     st.divider()
 
     # Leave Impact
-    st.markdown("### 🏖 Leave Impact")
+    st.markdown("<div class='section-title'>🏖 Leave Impact</div>", unsafe_allow_html=True)
     leave_summary = get_yearly_leave_summary(emp_id, selected_year)
 
     annual_used = float(leave_summary.get("AL", 0) or 0)
@@ -116,15 +121,49 @@ if view_mode == "Individual Employee":
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric("Annual Leave Used", f"{annual_used:.1f} days")
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Annual Leave Used</div>
+                <div class="metric-value">{annual_used:.1f}</div>
+                <div class="metric-subtext">days</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     with c2:
-        st.metric("Annual Leave Remaining", f"{annual_remaining:.1f} days")
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Annual Leave Remaining</div>
+                <div class="metric-value">{annual_remaining:.1f}</div>
+                <div class="metric-subtext">days</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     with c3:
-        st.metric("Unpaid Leave Used", f"{unpaid_used:.1f} days")
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Unpaid Leave Used</div>
+                <div class="metric-value">{unpaid_used:.1f}</div>
+                <div class="metric-subtext">days</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    st.caption("This is derived from the centralized leave rules, so AL overflow is split into unpaid instead of being counted as all AL.")
+    st.markdown(
+        f"""
+        <div class="info-note info-note-spaced">
+            This is derived from the centralized leave rules, so AL overflow is split into unpaid instead of being counted as all AL.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("<div style='height:20px'></div>",unsafe_allow_html=True)
+    st.markdown('<div class="spacer-sm"></div>', unsafe_allow_html=True)
 
     # Updated 7 Aug, 2026 - Added detailed leave history accordion with month filter
     with st.expander("🗂 Detailed Leave History", expanded=False):
@@ -173,26 +212,15 @@ if view_mode == "Individual Employee":
         else:
             st.info(f"No leave history found for {date(2000, history_month, 1).strftime('%B')} {selected_year}.")
 
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="spacer-md"></div>', unsafe_allow_html=True)
 
     # Attendance Symbols
     with st.expander("📖 Attendance Symbols"):
         st.markdown(
-            """
-            | Code | Meaning |
-            |------|---------|
-            | `/` | Present |
-            | AL | Annual Leave |
-            | MC | Medical Leave |
-            | SL | Special Leave |
-            | UPL | Unpaid Leave |
-            | ML | Maternity Leave |
-            | MRL | Married Leave |
-            | PH | Public Holiday |
-            | A | Absent |
-            | L | Late |
-            | HD | Half Day |
-            """
+            f"""
+            <div class="info-note">{legend_html}</div>
+            """,
+            unsafe_allow_html=True,
         )
 
 # ============================================================
@@ -205,7 +233,7 @@ else:
         "Month", list(range(1, 13)), index=date.today().month - 1,
         format_func=lambda m: date(2000, m, 1).strftime("%B"), key="mo_month",
     )
-    st.caption(legend_text)
+    st.markdown(f"<div class='info-note'>{legend_html}</div>", unsafe_allow_html=True)
 
     matrix = get_attendance_matrix(selected_year, selected_month)
     rest_day_columns = get_rest_day_columns(selected_year, selected_month)

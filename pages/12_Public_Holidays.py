@@ -72,13 +72,8 @@ def get_active_holidays():
 df = get_holidays()                                         # LOAD DATA
 tab_holidays, tab_add = st.tabs(["📋 Holiday List", "➕ Add Holiday",])
 with tab_holidays:
-    st.html("<div style='height:8px'></div>")
-    st.html(
-        """
-        <div class="dashboard-section-title">
-            Holiday List
-        </div>
-        """)
+    st.html('<div class="spacer-xs"></div>')
+    st.html('<div class="section-heading">Holiday List</div>')
     st.caption("View and manage public holidays and special holidays.")
 
     current_year = date.today().year                        # YEAR FILTER
@@ -96,7 +91,7 @@ with tab_holidays:
         years.insert(0, current_year)
 
     selected_year = st.selectbox("Year", years, index = 0, key = "holiday_year_filter",)
-    st.html("<div style='height:12px'></div>")
+    st.html('<div class="spacer-xs"></div>')
 
     if df.empty:
         filtered_df = df
@@ -121,126 +116,34 @@ with tab_holidays:
     with c1:
         st.html(
             f"""
-            <div style="
-                border:1px solid #e2e8f0;
-                border-radius:14px;
-                padding:18px 20px;
-                background:#ffffff;
-                min-height:120px;
-                box-shadow:0 2px 8px rgba(15,23,42,0.03);
-            ">
-                <div style="
-                    font-size:0.9rem;
-                    color:#64748b;
-                    font-weight:600;
-                    margin-bottom:10px;
-                ">
-                    📅 Total Holidays
-                </div>
-
-                <div style="
-                    font-size:1.9rem;
-                    font-weight:700;
-                    color:#172033;
-                    line-height:1.1;
-                ">
-                    {total_holidays}
-                </div>
-
-                <div style="
-                    font-size:0.82rem;
-                    color:#64748b;
-                    margin-top:7px;
-                ">
-                    holidays in {selected_year}
-                </div>
+            <div class="metric-card">
+                <div class="metric-label">📅 Total Holidays</div>
+                <div class="metric-value">{total_holidays}</div>
+                <div class="metric-subtext">holidays in {selected_year}</div>
             </div>
             """)
     with c2:
         st.html(
             f"""
-            <div style="
-                border:1px solid #e2e8f0;
-                border-radius:14px;
-                padding:18px 20px;
-                background:#ffffff;
-                min-height:120px;
-                box-shadow:0 2px 8px rgba(15,23,42,0.03);
-            ">
-                <div style="
-                    font-size:0.9rem;
-                    color:#64748b;
-                    font-weight:600;
-                    margin-bottom:10px;
-                ">
-                    ✓ Active Holidays
-                </div>
-
-                <div style="
-                    font-size:1.9rem;
-                    font-weight:700;
-                    color:#172033;
-                    line-height:1.1;
-                ">
-                    {active_holidays}
-                </div>
-
-                <div style="
-                    font-size:0.82rem;
-                    color:#64748b;
-                    margin-top:7px;
-                ">
-                    used in leave calculations
-                </div>
+            <div class="metric-card">
+                <div class="metric-label">✓ Active Holidays</div>
+                <div class="metric-value">{active_holidays}</div>
+                <div class="metric-subtext">used in leave calculations</div>
             </div>
             """)
     with c3:
         st.html(
             f"""
-            <div style="
-                border:1px solid #e2e8f0;
-                border-radius:14px;
-                padding:18px 20px;
-                background:#ffffff;
-                min-height:120px;
-                box-shadow:0 2px 8px rgba(15,23,42,0.03);
-            ">
-                <div style="
-                    font-size:0.9rem;
-                    color:#64748b;
-                    font-weight:600;
-                    margin-bottom:10px;
-                ">
-                    ⭐ Special Holidays
-                </div>
-
-                <div style="
-                    font-size:1.9rem;
-                    font-weight:700;
-                    color:#172033;
-                    line-height:1.1;
-                ">
-                    {special_holidays}
-                </div>
-
-                <div style="
-                    font-size:0.82rem;
-                    color:#64748b;
-                    margin-top:7px;
-                ">
-                    additional holidays
-                </div>
+            <div class="metric-card">
+                <div class="metric-label">⭐ Special Holidays</div>
+                <div class="metric-value">{special_holidays}</div>
+                <div class="metric-subtext">additional holidays</div>
             </div>
             """)
 
     # HOLIDAY LIST
-    st.html("<div style='height:24px'></div>")
-    st.html(
-        """
-        <div class="dashboard-section-title">
-            Holidays
-        </div>
-        """)
+    st.html('<div class="spacer-md"></div>')
+    st.html('<div class="section-heading">Holidays</div>')
 
     if filtered_df.empty:
         st.info(f"No holidays have been added for {selected_year}.")
@@ -310,18 +213,13 @@ with tab_holidays:
                             st.rerun()
 
     # LEGEND
-    st.html("<div style='height:20px'></div>")
+    st.html('<div class="spacer-md"></div>')
     st.caption("💡 Only active holidays are excluded when calculating working days for leave.")
 
 # ADD HOLIDAY
 with tab_add:
-    st.html("<div style='height:8px'></div>")
-    st.html(
-        """
-        <div class="dashboard-section-title">
-            Add Holiday
-        </div>
-        """)
+    st.html('<div class="spacer-xs"></div>')
+    st.html('<div class="section-heading">Add Holiday</div>')
     st.caption("Add a public holiday or a special holiday announced by the government.")
 
     with st.container(border=True):
@@ -330,7 +228,7 @@ with tab_add:
         holiday_type = st.selectbox("Holiday Type", HOLIDAY_TYPES, key = "new_holiday_type",)
         active = st.checkbox("Active", value = True, key = "new_holiday_active",)
 
-        st.html("<div style='height:8px'></div>")
+        st.html('<div class="spacer-xs"></div>')
         if st.button("Add Holiday", type = "primary", use_container_width = True, key = "add_holiday_btn",):
             if not holiday_name.strip():
                 st.error("Please enter a holiday name.")
