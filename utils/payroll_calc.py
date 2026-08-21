@@ -35,7 +35,7 @@ from datetime import date
 import calendar
 from utils.sheets_client import read_rate_table, append_row, update_row, get_row, read_table
 from utils.date_utils import parse_date
-from utils.leave_rules import is_public_holiday
+from utils.leave_rules import is_public_holiday, get_prorated_annual_entitlement, split_annual_leave_to_unpaid
 
 
 def get_age(date_of_birth: str) -> int:
@@ -379,10 +379,11 @@ def get_unpaid_leave_days(employee_id: str, month: str,) -> float:
     if not required_columns.issubset(df.columns):
         return 0.0
 
-    # Filter employee + approved unpaid leave
+    # Include Annual requests as well: an Annual request can contain unpaid
+    # overflow after the employee's remaining AL has been exhausted.
     df = df[(df["employee_id"].astype(str) == str(employee_id))
-        & (df["leave_type"].astype(str).str.strip() == "Unpaid")
-        & (df["status"].astype(str).str.strip() == "Approved")]
+        & (df["status"].astype(str).str.strip() == "Approved")
+        & (df["leave_type"].astype(str).str.strip().isin(["Annual", "Unpaid"]))].copy()
 
     if df.empty:
         return 0.0
@@ -393,17 +394,46 @@ def get_unpaid_leave_days(employee_id: str, month: str,) -> float:
     except (ValueError, TypeError):
         return 0.0
 
+    employee = get_row("Employees", {"employee_id": employee_id})
+    if employee is None:
+        return 0.0
+
+    annual_total = get_prorated_annual_entitlement(employee["join_date"], year)
+    annual_used_so_far = 0.0
+
     month_start = date(year, month_num, 1,)
     days_in_month = calendar.monthrange( year, month_num,)[1]
     month_end = date( year, month_num, days_in_month,)
 
     # Calculate overlap with payroll month
     total = 0.0
+    df = df.sort_values(["start_date", "end_date"], kind="mergesort")
     for _, row in df.iterrows():
         try:
             start = parse_date(row["start_date"])
             end = parse_date(row["end_date"])
         except Exception:
+            continue
+
+        if start.year != year:
+            continue
+
+        leave_type = str(row.get("leave_type", "")).strip()
+        requested_days = float(row.get("days", 0) or 0)
+
+        if leave_type == "Annual":
+            _, unpaid_days = split_annual_leave_to_unpaid(
+                requested_days,
+                annual_total - annual_used_so_far,
+            )
+            annual_used_so_far += min(
+                requested_days,
+                max(annual_total - annual_used_so_far, 0.0),
+            )
+        else:
+            unpaid_days = requested_days
+
+        if unpaid_days <= 0:
             continue
 
         # No overlap with this payroll month
@@ -419,7 +449,8 @@ def get_unpaid_leave_days(employee_id: str, month: str,) -> float:
 
         # Count calendar days within this month
         overlap_days = (overlap_end - overlap_start).days + 1
-        total += overlap_days
+        request_calendar_days = (end - start).days + 1
+        total += unpaid_days * (overlap_days / request_calendar_days)
 
     return float(total)
 

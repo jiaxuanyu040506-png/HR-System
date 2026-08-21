@@ -318,28 +318,31 @@ def record_leave_request(employee_id: str, leave_type: str, start_date: date,
         raise ValueError(error)
 
     request_id = f"LR{uuid.uuid4().hex[:8].upper()}"
+    effective_type = leave_type
+    effective_reason = reason
+
+    # Calculate before inserting an immediately-approved request. Otherwise
+    # get_leave_balance() sees this new request as already approved and consumes
+    # its Annual days before deciding how much AL remains.
+    if status == "Approved":
+        effective_type = _apply_approval_to_balance(employee_id, leave_type, days, start_date.year)
+        if effective_type != leave_type:
+            effective_reason = f"{reason} (auto-converted to Unpaid: no annual leave left)".strip()
+
     append_row("LeaveRequests", {
         "request_id": request_id,
         "employee_id": employee_id,
         "employee_name": employee_name,
-        "leave_type": leave_type,
+        "leave_type": effective_type,
         "start_date": str(start_date),
         "end_date": str(end_date),
         "days": days,
         "session": session,
-        "reason": reason,
+        "reason": effective_reason,
         "status": status,
         "approved_by": approved_by if status == "Approved" else "",
         "submit_date": datetime.now().strftime("%Y-%m-%d %H:%M"),
     })
-
-    if status == "Approved":
-        effective_type = _apply_approval_to_balance(employee_id, leave_type, days, start_date.year)
-        if effective_type != leave_type:
-            update_row("LeaveRequests", {"request_id": request_id}, {
-                "leave_type": effective_type,
-                "reason": f"{reason} (auto-converted to Unpaid: no annual leave left)".strip(),
-            })
 
     return request_id, days
 
@@ -465,21 +468,33 @@ def get_pending_requests(admin_email: str) -> list[dict]:
     return pending.to_dict("records")
 
 
-def get_today_on_leave_count() -> int:
-    """Number of employees on Approved leave that covers today's date."""
+def get_today_on_leave() -> list[dict]:
+    """Return employees with Approved leave covering today's date."""
     df = read_table("LeaveRequests")
     if df.empty:
-        return 0
+        return []
     today = date.today()
-    approved = df[df["status"] == "Approved"]
-    count = 0
+    approved = df[df["status"].astype(str).str.lower() == "approved"]
+    on_leave = {}
     for _, row in approved.iterrows():
         try:
             if parse_date(row["start_date"]) <= today <= parse_date(row["end_date"]):
-                count += 1
+                employee_id = str(row.get("employee_id", ""))
+                on_leave[employee_id] = {
+                    "employee_id": employee_id,
+                    "employee_name": row.get("employee_name") or employee_id,
+                    "leave_type": row.get("leave_type", "Leave"),
+                    "start_date": row.get("start_date", ""),
+                    "end_date": row.get("end_date", ""),
+                }
         except ValueError:
             continue
-    return count
+    return sorted(on_leave.values(), key=lambda item: str(item["employee_name"]).lower())
+
+
+def get_today_on_leave_count() -> int:
+    """Number of unique employees on Approved leave that covers today's date."""
+    return len(get_today_on_leave())
 
 
 def get_all_pending_requests() -> list[dict]:

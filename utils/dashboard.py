@@ -23,7 +23,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from utils.sheets_client import read_table
-from utils.leave_calc import get_leave_summary, get_all_pending_requests, get_today_on_leave_count, \
+from utils.leave_calc import get_leave_summary, get_all_pending_requests, get_today_on_leave, \
     approve_request, reject_request, get_my_requests
 from utils.performance import get_completed_counts_by_employee, get_assigned_vs_completed, get_employee_company_list, get_employee_performance_summary, get_employee_late_companies
 
@@ -89,7 +89,7 @@ def render_hr_dashboard():
     )
 
     pending = get_all_pending_requests()
-    today_on_leave = get_today_on_leave_count()
+    today_on_leave = get_today_on_leave()
 
     # KPI CARDS
     c1, c2, c3 = st.columns(3)
@@ -121,11 +121,38 @@ def render_hr_dashboard():
             f"""
             <div class="metric-card">
                 <div class="metric-label">🗓️ Today's Leaves</div>
-                <div class="metric-value">{today_on_leave}</div>
+                <div class="metric-value">{len(today_on_leave)}</div>
                 <div class="metric-subtext">employees on leave today</div>
             </div>
             """
         )
+
+    # TODAY'S LEAVE
+    st.html('<div class="spacer-md"></div>')
+    st.html('<div class="dashboard-section-title">Today\'s Leave</div>')
+    if not today_on_leave:
+        st.html(
+            """
+            <div class="dashboard-notice">
+                <div class="dashboard-notice-title">Everyone is working today</div>
+                No approved leave covers today.
+            </div>
+            """
+        )
+    else:
+        leave_columns = st.columns(min(len(today_on_leave), 3))
+        for index, leave in enumerate(today_on_leave):
+            with leave_columns[index % len(leave_columns)]:
+                st.html(
+                    f"""
+                    <div class="dashboard-request-card">
+                        <div class="dashboard-request-title">{leave['employee_name']}</div>
+                        <div class="dashboard-request-date">
+                            {leave['leave_type']} · {leave['start_date']} → {leave['end_date']}
+                        </div>
+                    </div>
+                    """
+                )
 
     # LEAVE APPROVAL QUEUE
     st.html('<div class="spacer-md"></div>')
