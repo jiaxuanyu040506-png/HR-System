@@ -14,6 +14,7 @@ from utils.performance import (
     calculate_due_date,
     get_due_date_with_completion_rollover,
     submit_performance_record,
+    update_company,
     CATEGORIES,
 )
 
@@ -117,7 +118,7 @@ with tab_log:
         """
     )
     st.caption("Manage companies and existing performance records.")
-    manage_add, manage_edit, manage_delete = st.columns(3, gap="large")
+    manage_add, manage_edit_company, manage_edit_record, manage_delete = st.columns(4, gap="medium")
 
     # ADD COMPANY
     with manage_add:
@@ -137,8 +138,47 @@ with tab_log:
                     st.success(f"{new_company_name.strip()} has been added.")
                     st.rerun()
 
+    # EDIT COMPANY
+    with manage_edit_company:
+        with st.expander("✏️ Edit Company", expanded=False):
+            st.caption("Update company information.")
+
+            companies = get_companies()
+
+            if not companies:
+                st.info("No companies available.")
+            else:
+                company_options = {company["company_name"]: company for company in companies}
+
+                selected_edit_company = st.selectbox("Select Company", list(company_options.keys()), key="edit_company_selection",)
+                selected_company_info = company_options[selected_edit_company]
+                edit_company_name = st.text_input("Company Name", value=selected_company_info.get("company_name", ""), key="edit_company_name",)
+
+                company_categories = CATEGORIES
+                current_category = selected_company_info.get("category", "")
+                edit_company_category = st.selectbox("Company Type", company_categories,
+                                                      index=(company_categories.index(current_category) if current_category in company_categories else 0),
+                                                      key="edit_company_category",)
+                edit_company_year_end = None
+                if edit_company_category == "Private Limited":
+                    edit_company_year_end = st.text_input("Year End", value=selected_company_info.get("year_end", "") or "",
+                                                          placeholder="31-Jan", key="edit_company_year_end", help="Example: 31-Jan",)
+                if st.button("Save Changes",type="primary", use_container_width=True, key="save_company_edit_btn",):
+                    if not edit_company_name.strip():
+                        st.error("Please enter a company name.")
+                    elif (edit_company_category == "Private Limited" and not edit_company_year_end.strip()):
+                        st.error("Please enter the financial year end.")
+                    else:
+                        success = update_company(old_company_name=selected_edit_company, company_name=edit_company_name.strip(),
+                                                 category=edit_company_category, year_end=(edit_company_year_end.strip() if edit_company_category == "Private Limited" else None),)
+                        if success:
+                            st.success(f"{edit_company_name.strip()} has been updated.")
+                            st.rerun()
+                        else:
+                            st.error("Failed to update company.")
+
     # EDIT RECORD
-    with manage_edit:
+    with manage_edit_record:
         with st.expander("✏️ Edit Record", expanded=False):
             st.caption("Update an existing performance record.")
 
@@ -386,14 +426,55 @@ with tab_performance:
         if employee_records.empty:
             st.info(f"No performance records found for {selected_employee}.")
         else:
-            filter_status = st.selectbox("Filter Status", ["All", "Pending", "Done", "Late",], key = "performance_status_filter",)
+            filter_col1, filter_col2 = st.columns(2)
+
+            with filter_col1:
+                filter_category = st.selectbox(
+                    "Filter Company Type",
+                    ["All"] + CATEGORIES,
+                    key="performance_category_filter",
+                )
+
+            with filter_col2:
+                filter_status = st.selectbox(
+                    "Filter Status",
+                    ["All", "Pending", "Done", "Late"],
+                    key="performance_status_filter",
+                )
+
             filtered_records = employee_records.copy()
+
+            # MAP COMPANY TYPE FROM COMPANY NAME
+            companies = get_companies()
+
+            company_category_map = {
+                company["company_name"]: company.get("category", "")
+                for company in companies
+            }
+
+            filtered_records["company_type"] = filtered_records["company_name"].map(
+                company_category_map
+            )
+
+            # FILTER BY COMPANY TYPE
+            if filter_category != "All":
+                filtered_records = filtered_records[
+                    filtered_records["company_type"] == filter_category
+                ]
+
+            # FILTER BY STATUS
             if filter_status == "Pending":
-                filtered_records = filtered_records[filtered_records["status"] == "Pending"]
+                filtered_records = filtered_records[
+                    filtered_records["status"] == "Pending"
+                ]
             elif filter_status == "Done":
-                filtered_records = filtered_records[filtered_records["status"] == "On Time"]
+                filtered_records = filtered_records[
+                    filtered_records["status"] == "On Time"
+                ]
             elif filter_status == "Late":
-                filtered_records = filtered_records[filtered_records["status"] == "Late"]
+                filtered_records = filtered_records[
+                    filtered_records["status"] == "Late"
+                ]
 
             # DISPLAY
             if filtered_records.empty:

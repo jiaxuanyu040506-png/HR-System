@@ -541,3 +541,44 @@ def get_due_date_with_completion_rollover(company_name: str, company_type: str, 
         return calculate_due_date(company_type, year + 1, year_end)
 
     return current_due_date
+
+# UPDATE COMPANY
+def update_company( old_company_name: str, company_name: str, category: str, company_type: str = "", year_end: str = "",) -> bool:
+    """
+    Update an existing company/client.
+
+    company_type is only relevant for Normal Company.
+    year_end is mainly used for Private Limited.
+
+    Returns:
+        True  -> update successful
+        False -> update failed
+    """
+
+    try:
+        df = read_table("Companies")
+
+        if df.empty:
+            return False
+
+        # Find the existing company
+        target = df[df["company_name"].astype(str).str.strip() == str(old_company_name).strip()]
+        if target.empty:
+            return False
+
+        # Prevent duplicate company names
+        duplicate = df[(df["company_name"].astype(str).str.strip() == company_name.strip()) & (df["company_name"].astype(str).str.strip() != str(old_company_name).strip())]
+        if not duplicate.empty:
+            return False
+
+        update_row("Companies", {"company_name": target.iloc[0]["company_name"]},
+                   {"company_name": company_name.strip(),
+                    "category": category,
+                    "company_type": (company_type.strip() if category == "Normal Company" else ""),
+                    "year_end": (year_end.strip() if category == "Private Limited" else ""),},)
+
+        return True
+
+    except Exception as e:
+        print(f"Failed to update company: {e}")
+        return False
